@@ -17,7 +17,7 @@ class Lexer:
     reserved = (
         'IF', 'ELSE', 'ELIF' ,'THEN', 'WHILE', 'FOR', 'DO', 'TO', 'READ', 'WRITE', 'PROGRAM', 'DECLARE', 'INTEGER', 'DECIMAL',
         'BEGIN', 'END', 'AND', 'OR', 'NOT', 'MOD', 'DEF', 'INDENT','DEDENT','NEWLINE','RETURN','BREAK', 'CONTINUE','PASS', 'TRUE', 'FALSE',
-        'DEF','CLASS','AND,''OR','NOT','WHITESPACE'
+        'CLASS','WHITESPACE'
     )
 
     tokens = reserved + (
@@ -25,9 +25,9 @@ class Lexer:
         'ID', 'NUMBER', 'SCONST',
 
         # Operators (+,-,*,/,%,<,>,<=,>=,==,!=,&&,||,!,=)
-        'PLUS', 'MINUS', 'MULTI', 'DIVIDE', 'LPAREN', 'RPAREN', 'COMMA', 'SEMICOLON', 'COLON', 'EQUAL', 'LESS',
+        'PLUS', 'MINUS', 'MULTI', 'DIVIDE', 'LPAREN', 'RPAREN', 'COMMA', 'SEMICOLON', 'COLON', 'EQUAL','NOTEQUAL', 'LESS',
         'LESSEQUAL', 'GREATER', 'GREATEREQUAL', 'ASSIGN', 'DOT', 'DOUBLEGREATER', 'DOUBLELESS', 'TRIPLELESS',
-        'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL'
+        'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL','LBRACKET','RBRACKET','LKEY','RKEY'
     )
     # Regular expression rules for simple tokens
 
@@ -42,10 +42,15 @@ class Lexer:
     t_SEMICOLON = r';'
     t_COLON = r':'
     t_EQUAL = r'='
+    t_NOTEQUAL = r'!='
     t_LESS = r'<'
     t_GREATER = r'>'
     t_ASSIGN = r':='
     t_DOT = r'\.'
+    t_LKEY = r'\{'
+    t_RKEY = r'\}'
+    t_LBRACKET = r'\['
+    t_RBRACKET = r'\]'
     t_DOUBLEGREATER = r'>>'
     t_DOUBLELESS = r'<<'
     t_TRIPLELESS = r'<<<'
@@ -58,8 +63,13 @@ class Lexer:
 
     t_ignore = ' \t'
 
+
+    def __init__(self):
+        #Detecting DEDENT by INDENT stack
+        self.indent_stack = [0]
+
     def t_ID(self, t):
-        r"""[a-zA-Z][a-zA-Z0-9_]*"""
+        r"""[a-zA-Z_][a-zA-Z0-9_]*"""
         if self.debug:
             print(f'DEBUG(LEXER): {t.value.upper()} on line {t.lineno}, position {t.lexpos}')
         t.type = self.reserved_map.get(t.value, 'ID')
@@ -86,7 +96,10 @@ class Lexer:
     def t_COMMENT(self, t):
         r"""\%.*"""
         pass
-
+    def t_WHITESPACE(t):
+        r'[ ]+'
+        if t.lexer.at_line_start and t.lexer.paren_count == 0:
+            return t
     def t_error(self, t):
         self.errors.append(Error("Illegal character '%s'" % t.value[0], t.lineno, t.lexpos, 'lexer', self.data))
         print(self.errors[-1])
@@ -94,3 +107,4 @@ class Lexer:
 
     def build(self, ):
         self.lex = lex.lex(module=self)
+    
