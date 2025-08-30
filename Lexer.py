@@ -15,8 +15,9 @@ class Lexer:
             self.reserved_map[r.lower()] = r
 
     reserved = (
-        'IF', 'ELSE', 'THEN', 'WHILE', 'FOR', 'DO', 'TO', 'READ', 'WRITE', 'PROGRAM', 'DECLARE', 'INTEGER', 'DECIMAL',
-        'BEGIN', 'END', 'AND', 'OR', 'NOT', 'MOD',
+        'IF', 'ELSE', 'ELIF' ,'THEN', 'WHILE', 'FOR', 'DO', 'TO', 'READ', 'WRITE', 'PROGRAM', 'DECLARE', 'INTEGER', 'DECIMAL',
+        'BEGIN', 'END', 'AND', 'OR', 'NOT', 'MOD', 'DEF', 'INDENT','DEDENT','NEWLINE','RETURN','BREAK', 'CONTINUE','PASS', 'TRUE', 'FALSE',
+        'DEF','CLASS','AND,''OR','NOT','WHITESPACE'
     )
 
     tokens = reserved + (
@@ -28,7 +29,6 @@ class Lexer:
         'LESSEQUAL', 'GREATER', 'GREATEREQUAL', 'ASSIGN', 'DOT', 'DOUBLEGREATER', 'DOUBLELESS', 'TRIPLELESS',
         'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL'
     )
-
     # Regular expression rules for simple tokens
 
     # Operators
