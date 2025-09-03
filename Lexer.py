@@ -14,11 +14,43 @@ class Lexer:
         for r in self.reserved:
             self.reserved_map[r.lower()] = r
 
-    reserved = (
-        'IF', 'ELSE', 'ELIF' ,'THEN', 'WHILE', 'FOR', 'DO', 'TO', 'READ', 'WRITE', 'PROGRAM', 'DECLARE', 'INTEGER', 'DECIMAL',
-        'BEGIN', 'END', 'AND', 'OR', 'NOT', 'MOD', 'DEF', 'INDENT','DEDENT','NEWLINE','RETURN','BREAK', 'CONTINUE','PASS', 'TRUE', 'FALSE',
-        'CLASS','WHITESPACE'
-    )
+    reserved = {
+        'false': 'FALSE',
+        'None': 'NONE',
+        'true': 'TRUE',
+        'and': 'AND',
+        'as': 'AS',
+        'assert': 'ASSERT',
+        'async': 'ASYNC',
+        'await': 'AWAIT',
+        'break': 'BREAK',
+        'class': 'CLASS',
+        'continue': 'CONTINUE',
+        'def': 'DEF',
+        'do': 'DO',
+        'elif': 'ELIF',
+        'else': 'ELSE',
+        'except': 'EXCEPT',
+        'finally': 'FINALLY',
+        'for': 'FOR',
+        'from': 'FROM',
+        'begin': 'BEGIN',
+        'if': 'IF',
+        'end': 'END',
+        'in': 'IN',
+        'is': 'IS',
+        'read': 'READ',
+        'to': 'TO',
+        'not': 'NOT',
+        'or': 'OR',
+        'pass': 'PASS',
+        'then': 'THEN',
+        'return': 'RETURN',
+        'try': 'TRY',
+        'while': 'WHILE',
+        'write': 'WRITE',
+        'yield': 'YIELD',
+    }
 
     tokens = reserved + (
         # Literals (identifier, integer constant, float constant, string constant, char const)'ID',
@@ -27,7 +59,7 @@ class Lexer:
         # Operators (+,-,*,/,%,<,>,<=,>=,==,!=,&&,||,!,=)
         'PLUS', 'MINUS', 'MULTI', 'DIVIDE', 'LPAREN', 'RPAREN', 'COMMA', 'SEMICOLON', 'COLON', 'EQUAL','NOTEQUAL', 'LESS',
         'LESSEQUAL', 'GREATER', 'GREATEREQUAL', 'ASSIGN', 'DOT', 'DOUBLEGREATER', 'DOUBLELESS', 'TRIPLELESS',
-        'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL','LBRACKET','RBRACKET','LKEY','RKEY'
+        'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL','LBRACKET','RBRACKET','LKEY','RKEY','INDENT','DEDENT','WHITESPACE','NEWLINE'
     )
     # Regular expression rules for simple tokens
 
