@@ -1,3 +1,4 @@
+# Based on https://github.com/ThaisBarrosAlvim/mini-compiler-python/blob/master/src/lexer.py
 import ply.lex as lex
 
 from src.utils import Error
@@ -15,14 +16,12 @@ class Lexer:
             self.reserved_map[r.lower()] = r
 
     reserved = {
-        'false': 'FALSE',
-        'None': 'NONE',
-        'true': 'TRUE',
         'and': 'AND',
         'as': 'AS',
         'assert': 'ASSERT',
         'async': 'ASYNC',
         'await': 'AWAIT',
+        'begin': 'BEGIN',
         'break': 'BREAK',
         'class': 'CLASS',
         'continue': 'CONTINUE',
@@ -30,22 +29,24 @@ class Lexer:
         'do': 'DO',
         'elif': 'ELIF',
         'else': 'ELSE',
+        'end': 'END',
         'except': 'EXCEPT',
+        'false': 'FALSE',
         'finally': 'FINALLY',
         'for': 'FOR',
         'from': 'FROM',
-        'begin': 'BEGIN',
         'if': 'IF',
-        'end': 'END',
         'in': 'IN',
         'is': 'IS',
-        'read': 'READ',
-        'to': 'TO',
+        'None': 'NONE',
         'not': 'NOT',
         'or': 'OR',
         'pass': 'PASS',
-        'then': 'THEN',
+        'read': 'READ',
         'return': 'RETURN',
+        'then': 'THEN',
+        'to': 'TO',
+        'true': 'TRUE',
         'try': 'TRY',
         'while': 'WHILE',
         'write': 'WRITE',
@@ -59,7 +60,8 @@ class Lexer:
         # Operators (+,-,*,/,%,<,>,<=,>=,==,!=,&&,||,!,=)
         'PLUS', 'MINUS', 'MULTI', 'DIVIDE', 'LPAREN', 'RPAREN', 'COMMA', 'SEMICOLON', 'COLON', 'EQUAL','NOTEQUAL', 'LESS',
         'LESSEQUAL', 'GREATER', 'GREATEREQUAL', 'ASSIGN', 'DOT', 'DOUBLEGREATER', 'DOUBLELESS', 'TRIPLELESS',
-        'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL','LBRACKET','RBRACKET','LKEY','RKEY','INDENT','DEDENT','WHITESPACE','NEWLINE'
+        'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL','LBRACKET','RBRACKET','LKEY','RKEY','INDENT','DEDENT','WHITESPACE','NEWLINE',
+        'FDIVIDE', 'MODULE', 'POW', 'EQUALEQUAL', 'PLUSEQUAL', 'MINUSEQUAL', 'MULTIEQUAL', 'DIVEQUAL', 'MODULEEEQUAL', 'FDIVEQUAL', 'POWEQUAL',        
     )
     # Regular expression rules for simple tokens
 
@@ -89,6 +91,19 @@ class Lexer:
     t_TRIPLEGREATER = r'>>>'
     t_LESSGREATER = r'<>'
     t_TERNAL = r'\?'
+    t_FDIVIDE = r'//'
+    t_MODULE = r'\%'
+    t_POW = r'\*'
+    t_EQUALEQUAL = r'=='
+    t_LESSEQUAL = r'<='
+    t_GREATEREQUAL = r'>='
+    t_PLUSEQUAL = r'\+='
+    t_MINUSEQUAL = r'-='
+    t_MULTIEQUAL = r'\*='
+    t_DIVEQUAL = r'/='
+    t_MODULEEEQUAL = r'\%='
+    t_FDIVEQUAL = r'//='
+    t_POWEQUAL = r'\*\*='
 
     # String literal
     t_SCONST = r'\"([^\\\n]|(\\.))*?\"'
@@ -124,14 +139,29 @@ class Lexer:
     def t_NEWLINE(self, t):
         r"""\n+"""
         t.lexer.lineno += len(t.value)
+        t.type = "NEWLINE"
+        if t.lexer.paren_count == 0:
+            return t
 
-    def t_COMMENT(self, t):
-        r"""\%.*"""
+    def t_COMMENT(self, t): # Try with %
+        r"""\b#.*"""
         pass
+
     def t_WHITESPACE(t):
         r'[ ]+'
         if t.lexer.at_line_start and t.lexer.paren_count == 0:
             return t
+        
+    def t_LPAREN(t):
+        r'\('
+        t.lexer.paren_count += 1
+        return t
+    
+    def t_RPAREN(t):
+        r'\)'
+        t.lexer.paren_count += 1
+        return t
+    
     def t_error(self, t):
         self.errors.append(Error("Illegal character '%s'" % t.value[0], t.lineno, t.lexpos, 'lexer', self.data))
         print(self.errors[-1])
