@@ -1,19 +1,20 @@
 # Based on https://github.com/ThaisBarrosAlvim/mini-compiler-python/blob/master/src/lexer.py
 import ply.lex as lex
+import sys
 
-from src.utils import Error
-from src.symbol_table import SymbolTable
+class Error:
+    def __init__(self, message, lineno, lexpos, source="lexer", data=None):
+        self.message = message
+        self.lineno = lineno
+        self.lexpos = lexpos
+        self.source = source
+        self.data = data
+
+    def __str__(self):
+        return f"[{self.source.upper()} ERROR] {self.message} (line {self.lineno}, position {self.lexpos})"
+    
 
 class Lexer:
-    def __init__(self, errors: list[Error], debug=False):
-        self.lex = None
-        self.data = None
-        self.debug = debug
-        self.symbol_table = SymbolTable()
-        self.reserved_map = {}
-        self.errors = errors  # to use the same list of errors that the parser uses
-        for r in self.reserved:
-            self.reserved_map[r.lower()] = r
 
     reserved = {
         'and': 'AND',
@@ -31,7 +32,7 @@ class Lexer:
         'else': 'ELSE',
         'end': 'END',
         'except': 'EXCEPT',
-        'false': 'FALSE',
+        'False': 'FALSE',
         'finally': 'FINALLY',
         'for': 'FOR',
         'from': 'FROM',
@@ -46,14 +47,14 @@ class Lexer:
         'return': 'RETURN',
         'then': 'THEN',
         'to': 'TO',
-        'true': 'TRUE',
+        'True': 'TRUE',
         'try': 'TRY',
         'while': 'WHILE',
         'write': 'WRITE',
         'yield': 'YIELD',
     }
 
-    tokens = reserved + (
+    tokens = [*reserved.values()] +[
         # Literals (identifier, integer constant, float constant, string constant, char const)'ID',
         'ID', 'NUMBER', 'SCONST',
 
@@ -61,8 +62,8 @@ class Lexer:
         'PLUS', 'MINUS', 'MULTI', 'DIVIDE', 'LPAREN', 'RPAREN', 'COMMA', 'SEMICOLON', 'COLON', 'EQUAL','NOTEQUAL', 'LESS',
         'LESSEQUAL', 'GREATER', 'GREATEREQUAL', 'ASSIGN', 'DOT', 'DOUBLEGREATER', 'DOUBLELESS', 'TRIPLELESS',
         'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL','LBRACKET','RBRACKET','LKEY','RKEY','INDENT','DEDENT','WHITESPACE','NEWLINE',
-        'FDIVIDE', 'MODULE', 'POW', 'EQUALEQUAL', 'PLUSEQUAL', 'MINUSEQUAL', 'MULTIEQUAL', 'DIVEQUAL', 'MODULEEEQUAL', 'FDIVEQUAL', 'POWEQUAL',        
-    )
+        'FDIVIDE', 'MODULE', 'POW', 'EQUALEQUAL', 'PLUSEQUAL', 'MINUSEQUAL', 'MULTIEQUAL', 'DIVEQUAL', 'MODEQUAL', 'FDIVEQUAL', 'POWEREQUAL',        
+    ]
     # Regular expression rules for simple tokens
 
     # Operators
@@ -70,8 +71,6 @@ class Lexer:
     t_MINUS = r'-'
     t_MULTI = r'\*'
     t_DIVIDE = r'/'
-    t_LPAREN = r'\('
-    t_RPAREN = r'\)'
     t_COMMA = r','
     t_SEMICOLON = r';'
     t_COLON = r':'
@@ -101,72 +100,87 @@ class Lexer:
     t_MINUSEQUAL = r'-='
     t_MULTIEQUAL = r'\*='
     t_DIVEQUAL = r'/='
-    t_MODULEEEQUAL = r'\%='
+    t_MODEQUAL = r'\%='
     t_FDIVEQUAL = r'//='
-    t_POWEQUAL = r'\*\*='
+    t_POWEREQUAL = r'\*\*='
 
     # String literal
     t_SCONST = r'\"([^\\\n]|(\\.))*?\"'
 
     t_ignore = ' \t'
 
+    def __init__(self, debug=False):
+        self.debug = debug
+        self.errors = []
+        self.reserved_map = {k.lower(): v for k, v in self.reserved.items()}
+        self.lexer = None
+        self.paren_count = 0
+        self.at_line_start = True
 
-    def __init__(self):
-        #Detecting DEDENT by INDENT stack
-        self.indent_stack = [0]
-
+    # Identifiers and reserved words
     def t_ID(self, t):
-        r"""[a-zA-Z_][a-zA-Z0-9_]*"""
-        if self.debug:
-            print(f'DEBUG(LEXER): {t.value.upper()} on line {t.lineno}, position {t.lexpos}')
-        t.type = self.reserved_map.get(t.value, 'ID')
+        r'[a-zA-Z_][a-zA-Z0-9_]*'
+        t.type = self.reserved_map.get(t.value.lower(), 'ID')
         return t
 
-    def t_NUMBER(self, t):
-        r"""\d+"""
-        t.value = int(t.value)
-        return t
-
+    # Numbers
     def t_DECIMAL(self, t):
-        r"""\d+\.\d+"""
+        r'\d+\.\d+'
         t.value = float(t.value)
         return t
 
-    def t_LITERAL(self, t):
-        r"""\"[^"]*\\"""
+    def t_NUMBER(self, t):
+        r'\d+'
+        t.value = int(t.value)
         return t
 
-    def t_NEWLINE(self, t):
-        r"""\n+"""
-        t.lexer.lineno += len(t.value)
-        t.type = "NEWLINE"
-        if t.lexer.paren_count == 0:
-            return t
-
-    def t_COMMENT(self, t): # Try with %
-        r"""\b#.*"""
+    # Comments
+    def t_COMMENT(self, t):
+        r'\#.*'
         pass
 
-    def t_WHITESPACE(t):
-        r'[ ]+'
-        if t.lexer.at_line_start and t.lexer.paren_count == 0:
-            return t
-        
-    def t_LPAREN(t):
-        r'\('
-        t.lexer.paren_count += 1
+    # Newlines
+    def t_NEWLINE(self, t):
+        r'\n+'
+        t.lexer.lineno += len(t.value)
+        self.at_line_start = True
         return t
-    
-    def t_RPAREN(t):
-        r'\)'
-        t.lexer.paren_count += 1
-        return t
-    
+
+    # Error handling
     def t_error(self, t):
-        self.errors.append(Error("Illegal character '%s'" % t.value[0], t.lineno, t.lexpos, 'lexer', self.data))
+        self.errors.append(Error(f"Illegal character '{t.value[0]}'", t.lineno, t.lexpos))
         print(self.errors[-1])
         t.lexer.skip(1)
 
-    def build(self, ):
-        self.lex = lex.lex(module=self)
-    
+    # Build lexer
+    def build(self, **kwargs):
+        self.lexer = lex.lex(module=self, **kwargs)
+        self.lexer.paren_count = 0
+        self.lexer.at_line_start = True
+
+    def input(self, data):
+        self.lexer.input(data)
+
+    def token(self):
+        return self.lexer.token()
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) < 2:
+        print("Usage: python lexer_complete.py <filename>")
+        sys.exit(1)
+
+    file = sys.argv[1]
+    with open(file, "r", encoding="utf-8") as f:
+        data = f.read()
+
+    lexer_instance = Lexer()
+    lexer_instance.build()
+    lexer_instance.input(data)
+
+    while True:
+        tok = lexer_instance.token()
+        if not tok:
+            break
+        print(tok)
