@@ -3,6 +3,7 @@ import ply.lex as lex
 import sys
 
 errors = []
+indent_stack = [0]
 
 reserved = {
     'and': 'AND',
@@ -42,19 +43,23 @@ reserved = {
     'yield': 'YIELD',
 }
 
-tokens = [*reserved.values()] +[
-        # Literals (identifier, integer constant, float constant, string constant, char const)'ID',
+tokens = [*reserved.values()] + [
+    # Literals (identifier, integer constant, float constant, string constant, char const)
     'ID', 'NUMBER', 'SCONST',
 
-        # Operators (+,-,*,/,%,<,>,<=,>=,==,!=,&&,||,!,=)
-    'PLUS', 'MINUS', 'MULTI', 'DIVIDE', 'LPAREN', 'RPAREN', 'COMMA', 'SEMICOLON', 'COLON', 'EQUAL','NOTEQUAL', 'LESS',
-    'LESSEQUAL', 'GREATER', 'GREATEREQUAL', 'ASSIGN', 'DOT', 'DOUBLEGREATER', 'DOUBLELESS', 'TRIPLELESS', 'DECIMAL',
-    'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL','LBRACKET','RBRACKET','LKEY','RKEY','INDENT','DEDENT','WHITESPACE','NEWLINE',
-    'FDIVIDE', 'MODULE', 'POW', 'EQUALEQUAL', 'PLUSEQUAL', 'MINUSEQUAL', 'MULTIEQUAL', 'DIVEQUAL', 'MODEQUAL', 'FDIVEQUAL', 'POWEREQUAL',        
+    # Operators (+,-,*,/,%,<,>,<=,>=,==,!=,&&,||,!,=)
+    'PLUS', 'MINUS', 'MULTI', 'DIVIDE', 'LPAREN', 'RPAREN', 'COMMA', 'SEMICOLON', 
+    'COLON', 'EQUAL', 'NOTEQUAL', 'LESS', 'LESSEQUAL', 'GREATER', 'GREATEREQUAL', 
+    'ASSIGN', 'DOT', 'DOUBLEGREATER', 'DOUBLELESS', 'TRIPLELESS', 'DECIMAL',
+    'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL', 'LBRACKET', 'RBRACKET',
+    'LKEY', 'RKEY', 'WHITESPACE', 'NEWLINE', 'FDIVIDE', 'MODULE', 'POW', 
+    'EQUALEQUAL', 'PLUSEQUAL', 'MINUSEQUAL', 'MULTIEQUAL', 'DIVEQUAL', 'MODEQUAL', 
+    'FDIVEQUAL', 'POWEREQUAL', 'INDENT', 'DEDENT', 'ENDMARKER', 'QUOTATIONMARK'        
 ]
-    # Regular expression rules for simple tokens
 
-    # Operators
+# Regular expression rules for simple tokens
+
+# Operators
 t_PLUS = r'\+'
 t_MINUS = r'-'
 t_MULTI = r'\*'
@@ -82,7 +87,7 @@ t_LESSGREATER = r'<>'
 t_TERNAL = r'\?'
 t_FDIVIDE = r'//'
 t_MODULE = r'\%'
-t_POW = r'\*'
+t_POW = r'\*\*'
 t_EQUALEQUAL = r'=='
 t_LESSEQUAL = r'<='
 t_GREATEREQUAL = r'>='
@@ -94,13 +99,19 @@ t_MODEQUAL = r'\%='
 t_FDIVEQUAL = r'//='
 t_POWEREQUAL = r'\*\*='
 
-    # String literal
+# String literal
 t_SCONST = r'\"([^\\\n]|(\\.))*?\"'
 
-t_ignore = ' \t'
+def t_WHITESPACE(t):
+    r'[ \t]+'
+    return t
 
+def t_NEWLINE(t):
+    r'\n+'
+    t.lineno += len(t.value)
+    return t
 
-    # Numbers
+# Numbers
 def t_DECIMAL(t):
     r'\d+\.\d+'
     t.value = float(t.value)
@@ -120,21 +131,138 @@ def t_COMMENT(t):
     r'\#.*'
     pass
 
-def t_NEWLINE(t):
-    r'\n+'
-    t.lexer.lineno += len(t.value)
-    return t
-
 def t_error(t):
     errors.append(f"Illegal character '{t.value[0]}' at line {t.lineno}")
-    print(errors[-1])
+    print("Skip error: ", errors[-1])
     t.lexer.skip(1)
 
-lexer = lex.lex()
+# INDENT states
+NO_INDENT = 0
+MIGHT_INDENT = 1
+MUST_INDENT = 2
+
+def _new_token_manual(type, lineno):
+    tok = lex.LexToken()
+    tok.lexpos = 0
+    tok.value = None
+    tok.type = type
+    tok.lineno = lineno
+    return tok
+
+def DEDENT(lineno):
+    return _new_token_manual("DEDENT", lineno)
+
+def INDENT(lineno):
+    return _new_token_manual("INDENT", lineno)
+
+def track_indent(lexer, tokens):
+    lexer.at_line_start = True
+    indent_state = NO_INDENT
+    
+    for token in tokens:
+        token.at_line_start = lexer.at_line_start
+        
+        if token.type == "COLON":
+            indent_state = MIGHT_INDENT
+            token.must_indent = False
+        elif token.type == "NEWLINE":
+            lexer.at_line_start = True
+            if indent_state == MIGHT_INDENT:
+                indent_state = MUST_INDENT
+            token.must_indent = False
+        elif token.type == "WHITESPACE":
+            # White space is the beggining of each line
+            token.must_indent = False
+        else:
+            if indent_state == MUST_INDENT:
+                token.must_indent = True
+            else:
+                token.must_indent = False
+            lexer.at_line_start = False
+            indent_state = NO_INDENT
+        
+        yield token
+
+def filter_indent(tokens):
+    global indent_stack
+    depth = 0
+    pending_whitespace = None
+    
+    for token in tokens:
+        if token.type == "WHITESPACE" and token.at_line_start:
+            depth = len(token.value)
+            pending_whitespace = token
+            continue
+        
+        if token.type == "NEWLINE":
+            depth = 0
+            pending_whitespace = None
+            yield token
+            continue
+        
+        if pending_whitespace is not None:
+            try:
+                if token.must_indent:
+                    if depth <= indent_stack[-1]:
+                        raise IndentationError("Error 01!! Block must be indented")
+                    indent_stack.append(depth)
+                    yield INDENT(token.lineno)
+                elif token.at_line_start:
+                    if depth > indent_stack[-1]:
+                        raise IndentationError("Error 02!! Indentation found, but no new block found")
+                    elif depth < indent_stack[-1]:
+                        # Look for line number
+                        while depth < indent_stack[-1]:
+                            yield DEDENT(token.lineno)
+                            indent_stack.pop()
+                        if depth != indent_stack[-1]:
+                            raise IndentationError("Error 03!! Inconsistent indentation")
+            except IndentationError as e:
+                # Capture errors, but continue execution
+                errors.append(f"Indentation Error at line {token.lineno}: {str(e)}")
+                print(f"Indentation Error: {str(e)} at line {token.lineno}")
+            
+            pending_whitespace = None
+        
+        yield token
+    
+    # End with DEDENTS
+    while len(indent_stack) > 1:
+        yield DEDENT(token.lineno if token else 1)
+        indent_stack.pop()
+
+def final_indent(lexer, add_endmarker=True):
+    tokens = iter(lexer.token, None)
+    tokens = track_indent(lexer, tokens)
+    
+    for token in filter_indent(tokens):
+        yield token
+    
+    if add_endmarker:
+        yield _new_token_manual("ENDMARKER", lexer.lineno)
+
+class IndentLexer(object):
+    def __init__(self, debug=0, reflags=0):
+        self.lexer = lex.lex(debug=debug, reflags=reflags)
+        self.token_stream = None
+
+    def input(self, s, add_endmarker=True):
+        global indent_stack
+        indent_stack = [0]  # Reset stack for each input
+        self.lexer.input(s)
+        self.token_stream = final_indent(self.lexer, add_endmarker)
+
+    def token(self):
+        try:
+            return next(self.token_stream)
+        except StopIteration:
+            return None
+
+lexer = IndentLexer()
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python lexer.py <filename>")
+        print("Usage: \n \t py lexer.py <filename>")
         sys.exit(1)
 
     file = sys.argv[1]
@@ -147,3 +275,9 @@ if __name__ == "__main__":
         if not tok:
             break
         print(tok)
+    
+    # All errors found
+    if errors:
+        print("\n===== Resume: ALL ERRORS FOUND =====")
+        for error in errors:
+            print(error)
