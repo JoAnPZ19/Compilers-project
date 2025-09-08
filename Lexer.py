@@ -108,7 +108,7 @@ def t_WHITESPACE(t):
 
 def t_NEWLINE(t):
     r'\n+'
-    t.lineno += len(t.value)
+    t.lexer.lineno += len(t.value)
     return t
 
 # Numbers
@@ -141,12 +141,12 @@ NO_INDENT = 0
 MIGHT_INDENT = 1
 MUST_INDENT = 2
 
-def _new_token_manual(type, lineno):
+def _new_token_manual(type, lineno=None, lexer=None):
     tok = lex.LexToken()
     tok.lexpos = 0
     tok.value = None
     tok.type = type
-    tok.lineno = lineno
+    tok.lineno = lineno if lineno is not None else (lexer.lineno if lexer else 0)
     return tok
 
 def DEDENT(lineno):
