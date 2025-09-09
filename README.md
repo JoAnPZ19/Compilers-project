@@ -15,7 +15,7 @@ They are mapped to token types like IF, ELSE, DEF, CLASS, RETURN, etc.
 
 Identifiers follow the pattern:
 
-[a-zA-Z_][a-zA-Z0-9_]*
+    [a-zA-Z_][a-zA-Z0-9_]*
 
 
 They are used for variable names, function names, and class names.
@@ -25,7 +25,7 @@ If the identifier matches a reserved word, it is converted to the appropriate ke
 
 Identifiers follow the pattern:
 
-[a-zA-Z_][a-zA-Z0-9_]*
+    [a-zA-Z_][a-zA-Z0-9_]*
 
 
 They are used for variable names, function names, and class names.
@@ -34,29 +34,31 @@ If the identifier matches a reserved word, it is converted to the appropriate ke
 
 ### Literals (numbers and strings)
 
-NUMBER → integers (42)
+* NUMBER → integers (42)
 
-DECIMAL → floating-point numbers (3.14)
+* DECIMAL → floating-point numbers (3.14)
 
-SCONST → string constants enclosed in double quotes ("Hello World")
+* SCONST → string constants enclosed in double quotes ("Hello World")
 
 ### Operands
 
-Arithmetic and logical operators supported:
-+, -, *, /, %, //, **,
-Comparison operators: <, <=, >, >=, ==, !=, <>
-Assignment operators: =, +=, -=, *=, /=, %=, //=, **=
-Other operators: := (assign), ? (ternary-like), ! (negation via NOT keyword)
+* Arithmetic and logical operators supported: +, -, *, /, %, //, **,
+  
+* Comparison operators: <, <=, >, >=, ==, !=, <>
+  
+* Assignment operators: =, +=, -=, *=, /=, %=, //=, **=
+  
+* Other operators: := (assign), ? (ternary-like), ! (negation via NOT keyword)
 
 ### Simbols and delimiters
 
-Parentheses: ( )
+* Parentheses: ( )
 
-Brackets: [ ]
+* Brackets: [ ]
 
-Braces: { }
+* Braces: { }
 
-Punctuation: , ; : .
+* Punctuation: , ; : .
 
 ### Comments
 
@@ -66,15 +68,15 @@ Comments are ignored by the lexer and not returned as tokens.
 
 ### Indentation
 
-Blocks are defined by indentation, instead of braces.
+- Blocks are defined by indentation, instead of braces.
 
-At the beginning of a line, the lexer counts spaces (WHITESPACE).
+- At the beginning of a line, the lexer counts spaces (WHITESPACE).
 
-If the indentation increases, an INDENT token is emitted.
+- If the indentation increases, an INDENT token is emitted.
 
-If the indentation decreases, one or more DEDENT tokens are emitted.
+- If the indentation decreases, one or more DEDENT tokens are emitted.
 
-At the end of input, remaining DEDENT tokens are generated automatically.
+- At the end of input, remaining DEDENT tokens are generated automatically.
 
 This mimics Python’s block structure and ensures consistent nesting rules.
 
@@ -84,16 +86,16 @@ Errors such as inconsistent indentation or unexpected indent are reported with t
 
 The lexer handles two kinds of errors:
 
-Illegal characters → reported with the offending character and its line number.
+1. Illegal characters → reported with the offending character and its line number.
 Example:
 
-Illegal character '$' at line 3
+`Illegal character '$' at line 3`
 
+2. Indentation errors → reported when the indentation depth is inconsistent or unexpected.
 
-Indentation errors → reported when the indentation depth is inconsistent or unexpected.
 Example:
 
-Indentation Error at line 5: Inconsistent indentation
+`Indentation Error at line 5: Inconsistent indentation`
 
 
 All errors are collected in a list (errors) and also printed during execution.
@@ -117,13 +119,15 @@ token() → retrieve the next token
 
 ## Requirements
 
-Python 3.8+
+* Python 3.8+
 
-PLY (Python Lex-Yacc) → install via pip:
+* PLY (Python Lex-Yacc) → install via pip:
 
-pip install ply
 
-Optional:
+          pip install ply
+
+
+* **Optional:**
 
 Works on any OS (Windows, Linux, macOS)
 
@@ -134,19 +138,36 @@ Recommended editor: VSCode or PyCharm for syntax highlighting and debugging
 To execute the code, you should be placed in the folder containing all the repo files. 
 Then, you can execute: 
 
-python Lexer.py <input file>
+    python Lexer.py <input file>
 
 or 
 
-py Lexer.py <input file> 
+    py Lexer.py <input file> 
 
 Where input file is the name of the python file you want to tokenize. You can use Prueba.txt or Prueba2.txt or any other file written using a python language. 
 
 
 ##  Output examples
 
+Command used: 
 
+    py Lexer.py Prueba2.txt
 
+Expected output: 
+
+    LexToken(DEF,'def',1,0)
+    LexToken(WHITESPACE,' ',1,3)
+    LexToken(ID,'sum',1,4)
+    LexToken(LPAREN,'(',1,7)
+    ...
+    LexToken(DEDENT,None,8,0)
+    LexToken(DEDENT,None,8,0)
+    LexToken(ENDMARKER,None,8,0)
+
+    ===== Resume: ALL ERRORS FOUND =====
+    Indentation Error at line 7: Error 01!! Block must be indented
+    Indentation Error at line 8: Error 01!! Block must be indented
+`
 
 
 ### Students
