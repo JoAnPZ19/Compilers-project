@@ -173,6 +173,7 @@ def track_indent(lexer, tokens):
         elif token.type == "WHITESPACE":
             # White space is the beggining of each line
             token.must_indent = False
+            
         else:
             if indent_state == MUST_INDENT:
                 token.must_indent = True
@@ -189,6 +190,11 @@ def filter_indent(tokens):
     pending_whitespace = None
     
     for token in tokens:
+        if token.type == "DEF":
+            indent_stack = [0]
+            pending_whitespace = None
+            continue
+
         if token.type == "WHITESPACE" and token.at_line_start:
             depth = len(token.value)
             pending_whitespace = token
