@@ -54,7 +54,8 @@ tokens = [*reserved.values()] + [
     'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL', 'LBRACKET', 'RBRACKET',
     'LKEY', 'RKEY', 'WHITESPACE', 'NEWLINE', 'FDIVIDE', 'MODULE', 'POW', 
     'EQUALEQUAL', 'PLUSEQUAL', 'MINUSEQUAL', 'MULTIEQUAL', 'DIVEQUAL', 'MODEQUAL', 
-    'FDIVEQUAL', 'POWEREQUAL', 'INDENT', 'DEDENT', 'ENDMARKER', 'QUOTATIONMARK'        
+    'FDIVEQUAL', 'POWEREQUAL', 'INDENT', 'DEDENT', 'ENDMARKER', 'QUOTATIONMARK',
+    'DQUOTATIONMARK'        
 ]
 
 # Regular expression rules for simple tokens
@@ -98,6 +99,8 @@ t_DIVEQUAL = r'/='
 t_MODEQUAL = r'\%='
 t_FDIVEQUAL = r'//='
 t_POWEREQUAL = r'\*\*='
+t_QUOTATIONMARK = r'\''
+t_DQUOTATIONMARK = r'\"'
 
 # String literal
 t_DSTRING = r'\"([^\\\n]|(\\.))*?\"'
@@ -163,7 +166,7 @@ def track_indent(lexer, tokens):
     for token in tokens:
         token.at_line_start = lexer.at_line_start
         
-        if token.type == "COLON":
+        if token.type == "COLON" or token.type == "LKEY" or token.type == "LBRACKET":
             indent_state = MIGHT_INDENT
             token.must_indent = False
         elif token.type == "NEWLINE":
