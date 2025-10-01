@@ -1,14 +1,13 @@
 # Based on https://github.com/ThaisBarrosAlvim/mini-compiler-python/blob/master/src/lexer.py
 import ply.yacc as yacc
-from src.lexer import Lexer
-from src.utils import Error
+import Lexer
 
 
 class Parser:
     tokens = Lexer.tokens
 
     def __init__(self, debug=False):
-        self.errors: list[Error] = []
+        self.errors = []
         self.parser = None
         self.data = None
         self.debug = debug
@@ -16,15 +15,14 @@ class Parser:
 
     def id_exists(self, symbol, p):
         if not self.lexer.symbol_table.exists(symbol):
-            self.errors.append(Error(f"Symbol '{symbol}' not declared", p.lexer.lineno, p.lexer.lexpos, 'semantic', self.data))
+            self.errors.append(f"Symbol '{symbol}' not declared", p.lexer.lineno, p.lexer.lexpos, 'semantic', self.data)
             print(self.errors[-1])
 
     def p_error(self, p):
         if not p:
-            self.errors.append(Error("Unexpected end of input", 0, 0, 'parser', self.data))
+            self.errors.append(f"Unexpected end of input", 0, 0, 'parser', self.data)
         else:
-            self.errors.append(Error(f"Syntax error on '{p.value}'",
-                                     p.lineno, p.lexpos, 'parser', self.data))
+            self.errors.append(f"Syntax error on '{p.value}'", p.lineno, p.lexpos, 'parser', self.data)
         print(self.errors[-1])
         # print(f"debug: {self.errors[-1].__repr__()}")
 
@@ -62,8 +60,7 @@ class Parser:
                 self.lexer.symbol_table.add(t, p.lexer.lexpos, p.lexer.lineno, p[1])
             else:
 
-                self.errors.append(Error(f"Symbol {t} already declared", p.lexer.lineno, p.lexer.lexpos,
-                                         f'semantic', self.data))
+                self.errors.append(f"Symbol {t} already declared", p.lexer.lineno, p.lexer.lexpos, f'semantic', self.data)
                 print(self.errors[-1])
 
     def p_identifier_list(self, p):
@@ -216,3 +213,28 @@ class Parser:
 
     def p_empty(self, p):
         """empty :"""
+
+    def parse(self, source, debug=False, tracking=False):
+        self.errors = []
+        self.lexer.input(source)
+        result = self.parser.parse(lexer=self.lexer, debug=debug, tracking=tracking)
+        return result
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) < 2:
+        print("Uso: python Parser.py <archivo>")
+        sys.exit(1)
+
+    filename = sys.argv[1]
+    with open(filename, "r", encoding="utf-8") as f:
+        src = f.read()
+
+    p = Parser()
+    ast = p.parse(src)
+    print("\nAST:")
+    print(ast)
+    if p.errors:
+        print("\nSemantic Errors:")
+        for e in p.errors:
+            print(e)
