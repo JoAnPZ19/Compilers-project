@@ -1,10 +1,4 @@
 ### PRUEBAS
-def random_operation(a,b):
-    c = a + b
-
-    #Hi I'm a comment!
-    return c + a * b + 2.6548
-
 def fibonacci(n):    if n == 1 or n == 2:
         return 1    elif n == 0:
         return n/0    else:

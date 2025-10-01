@@ -45,7 +45,7 @@ reserved = {
 
 tokens = [*reserved.values()] + [
     # Literals (identifier, integer constant, float constant, string constant, char const)
-    'ID', 'NUMBER', 'SCONST',
+    'ID', 'NUMBER', 'SSTRING', 'DSTRING',
 
     # Operators (+,-,*,/,%,<,>,<=,>=,==,!=,&&,||,!,=)
     'PLUS', 'MINUS', 'MULTI', 'DIVIDE', 'LPAREN', 'RPAREN', 'COMMA', 'SEMICOLON', 
@@ -54,7 +54,8 @@ tokens = [*reserved.values()] + [
     'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL', 'LBRACKET', 'RBRACKET',
     'LKEY', 'RKEY', 'WHITESPACE', 'NEWLINE', 'FDIVIDE', 'MODULE', 'POW', 
     'EQUALEQUAL', 'PLUSEQUAL', 'MINUSEQUAL', 'MULTIEQUAL', 'DIVEQUAL', 'MODEQUAL', 
-    'FDIVEQUAL', 'POWEREQUAL', 'INDENT', 'DEDENT', 'ENDMARKER', 'QUOTATIONMARK'        
+    'FDIVEQUAL', 'POWEREQUAL', 'INDENT', 'DEDENT', 'ENDMARKER', 'QUOTATIONMARK',
+    'DQUOTATIONMARK'        
 ]
 
 # Regular expression rules for simple tokens
@@ -98,9 +99,12 @@ t_DIVEQUAL = r'/='
 t_MODEQUAL = r'\%='
 t_FDIVEQUAL = r'//='
 t_POWEREQUAL = r'\*\*='
+t_QUOTATIONMARK = r'\''
+t_DQUOTATIONMARK = r'\"'
 
 # String literal
-t_SCONST = r'\"([^\\\n]|(\\.))*?\"'
+t_DSTRING = r'\"([^\\\n]|(\\.))*?\"'
+t_SSTRING = r"'([^\\\n]|(\\.))*?'"
 
 def t_WHITESPACE(t):
     r'[ \t]+'
@@ -162,7 +166,7 @@ def track_indent(lexer, tokens):
     for token in tokens:
         token.at_line_start = lexer.at_line_start
         
-        if token.type == "COLON":
+        if token.type == "COLON" or token.type == "LKEY" or token.type == "LBRACKET":
             indent_state = MIGHT_INDENT
             token.must_indent = False
         elif token.type == "NEWLINE":
@@ -173,6 +177,7 @@ def track_indent(lexer, tokens):
         elif token.type == "WHITESPACE":
             # White space is the beggining of each line
             token.must_indent = False
+            
         else:
             if indent_state == MUST_INDENT:
                 token.must_indent = True
@@ -189,6 +194,21 @@ def filter_indent(tokens):
     pending_whitespace = None
     
     for token in tokens:
+
+        if token.type == "WHITESPACE" and not token.at_line_start:
+            if len(token.value) % 4 == 0: 
+                msg = f"Error 04!! Unexpected indentation inside a line at line {token.lineno}"
+                errors.append(f"Indentation Error at line {token.lineno}: {msg}")
+                print(f"Indentation Error: {msg}")
+        if token.type == "DEF" or token.type == "CLASS":
+            while depth < indent_stack[-1]:
+                yield DEDENT(token.lineno)
+                indent_stack.pop()
+            indent_stack = [0]
+            pending_whitespace = None
+            yield token
+            continue
+
         if token.type == "WHITESPACE" and token.at_line_start:
             depth = len(token.value)
             pending_whitespace = token
