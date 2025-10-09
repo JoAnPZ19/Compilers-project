@@ -1,4 +1,5 @@
 # Based on https://github.com/ThaisBarrosAlvim/mini-compiler-python/blob/master/src/lexer.py
+# and https://github.com/dabeaz/ply/blob/master/example/GardenSnake/GardenSnake.py 
 import ply.lex as lex
 import sys
 
