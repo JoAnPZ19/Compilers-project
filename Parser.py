@@ -56,12 +56,12 @@ class Parser:
     def build(self):
         self.parser = yacc.yacc(module=self, debug=self.debug)
 
-    # Programa principal - módulo Python
+    # Main module
     def p_module(self, p):
         """module : statements"""
         p[0] = Node("module", None, p[1])
 
-    # Lista de statements
+    # Statements
     def p_statements(self, p):
         """statements : statement
                       | statements statement"""
@@ -70,7 +70,7 @@ class Parser:
         else:
             p[0] = p[1] + [p[2]]
 
-    # Statement individual
+    # Individual statement
     def p_statement(self, p):
         """statement : simple_statement NEWLINE
                      | compound_statement
@@ -82,7 +82,7 @@ class Parser:
         else:
             p[0] = Node("pass")
 
-    # Statements simples (una línea)
+    # Simple statements
     def p_simple_statement(self, p):
         """simple_statement : expression_statement
                            | assignment_statement
@@ -90,7 +90,7 @@ class Parser:
                            | pass_statement"""
         p[0] = p[1]
 
-    # Statements compuestos (con cuerpo indentado)
+    # Compound statements
     def p_compound_statement(self, p):
         """compound_statement : function_def
                              | if_statement
@@ -98,7 +98,7 @@ class Parser:
                              | for_statement"""
         p[0] = p[1]
 
-    # Definición de función
+    # Def function
     def p_function_def(self, p):
         """function_def : DEF ID LPAREN parameters RPAREN COLON suite"""
         p[0] = Node("function_def", p[2], [Node("parameters", None, p[4]), p[7]])
@@ -119,10 +119,14 @@ class Parser:
         else:
             p[0] = p[1] + [Node("parameter", p[3])]
 
-    # Suite (cuerpo de función/estructura de control)
+    # Suite
     def p_suite(self, p):
-        """suite : NEWLINE INDENT statements DEDENT"""
-        p[0] = Node("suite", None, p[3])
+        """suite : NEWLINE INDENT statements DEDENT
+                 | simple_statement NEWLINE"""
+        if len(p) == 5:
+            p[0] = Node("suite", None, p[3])
+        else:
+            p[0] = Node("suite", None, [p[1]])
 
     # Statement if
     def p_if_statement(self, p):
@@ -174,7 +178,7 @@ class Parser:
 
     # Assignment
     def p_assignment_statement(self, p):
-        """assignment_statement : ID ASSIGN expression"""
+        """assignment_statement : ID EQUAL expression"""
         p[0] = Node("assignment", p[1], [p[3]])
 
     # Expression statement
@@ -220,7 +224,7 @@ class Parser:
                             | expression OR expression"""
         p[0] = Node("boolean_op", p[2], [p[1], p[3]])
 
-    # Primarios
+    # Primary expressions
     def p_primary(self, p):
         """primary : atom
                   | primary LPAREN arguments RPAREN
@@ -248,7 +252,7 @@ class Parser:
         else:
             p[0] = p[1] + [p[3]]
 
-    # Átomos
+    # Atoms
     def p_atom(self, p):
         """atom : ID
                | NUMBER
@@ -283,7 +287,7 @@ class Parser:
         result = self.parser.parse(lexer=self.lexer, debug=debug)
         return result
 
-# Función de prueba
+# Test fx
 def test_parser():
     test_code = """
 def random_operation(a, b):
@@ -302,7 +306,7 @@ def fibonacci(n):
     parser.build()
     ast = parser.parse(test_code)
     
-    print("=== AST GENERADO ===")
+    print("=== AST ===")
     print(ast)
     
     if parser.errors:
