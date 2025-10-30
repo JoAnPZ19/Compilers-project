@@ -1,121 +1,62 @@
-# Project: Lexer for Fangless Python
+# Project: Parser for Fangless Python
 
 ## Description
-This project implements a lexer for a custom programming language inspired by Python, but simplified (referred to here as Fangless Python).
-It is built using PLY (Python Lex-Yacc) and extends the default lexer functionality with indentation-sensitive parsing, similar to Python’s INDENT and DEDENT token.
+This project implements a parser for a custom programming language inspired by Python, but simplified (referred to here as Fangless Python).
+It is built using PLY (Python Lex-Yacc) and extends the default parser functionality with indentation-sensitive parsing, similar to Python’s INDENT and DEDENT token.
 
 ## What's included? 
 
-The lexer recognizes reserved words such as:
-if, else, elif, while, for, def, return, class, try, except, async, await, begin, end, True, False, None, and, or, not, yield, pass, break, continue, from, as, is, assert, finally, do, then, to, read, write.
+The parser recognizes and handles the following language structures:
 
-They are mapped to token types like IF, ELSE, DEF, CLASS, RETURN, etc.
+Function definitions (def ... :)
 
-### Keywords
+Class definitions (class ... :)
 
-Identifiers follow the pattern:
+Conditional statements (if, elif, else)
 
-    [a-zA-Z_][a-zA-Z0-9_]*
+Loops (for, while, do ... end)
 
+Return statements (return)
 
-They are used for variable names, function names, and class names.
-If the identifier matches a reserved word, it is converted to the appropriate keyword token.
+Assignments and expressions
 
-### Identifiers
+Arithmetic and logical operations
 
-Identifiers follow the pattern:
+Comments and newlines are ignored by syntax rules.
 
-    [a-zA-Z_][a-zA-Z0-9_]*
+### AST Node Design
 
+The Node class is a lightweight representation of the parse tree, used to store:
 
-They are used for variable names, function names, and class names.
-If the identifier matches a reserved word, it is converted to the appropriate keyword token.
+type → rule or token type ("IF", "DEF", "EXPR", etc.)
+value → literal or identifier value (e.g., variable name)
+children → list of sub-nodes forming the tree structure
 
-
-### Literals (numbers and strings)
-
-* NUMBER → integers (42)
-
-* DECIMAL → floating-point numbers (3.14)
-
-* SCONST → string constants enclosed in double quotes ("Hello World")
-
-### Operands
-
-* Arithmetic and logical operators supported: +, -, *, /, %, //, **,
-  
-* Comparison operators: <, <=, >, >=, ==, !=, <>
-  
-* Assignment operators: =, +=, -=, *=, /=, %=, //=, **=
-  
-* Other operators: := (assign), ? (ternary-like), ! (negation via NOT keyword)
-
-### Simbols and delimiters
-
-* Parentheses: ( )
-
-* Brackets: [ ]
-
-* Braces: { }
-
-* Punctuation: , ; : .
-
-### Comments
-
-Single-line comments start with # and continue until the end of the line.
-Comments are ignored by the lexer and not returned as tokens.
-
-
-### Indentation
-
-- Blocks are defined by indentation, instead of braces.
-
-- At the beginning of a line, the lexer counts spaces (WHITESPACE).
-
-- If the indentation increases, an INDENT token is emitted.
-
-- If the indentation decreases, one or more DEDENT tokens are emitted.
-
-- At the end of input, remaining DEDENT tokens are generated automatically.
-
-This mimics Python’s block structure and ensures consistent nesting rules.
-
-Errors such as inconsistent indentation or unexpected indent are reported with the corresponding line number.
 
 ### Error handling
 
-The lexer handles two kinds of errors:
+The parser reports syntax and structural errors with line numbers, similar to the lexer:
 
-1. Illegal characters → reported with the offending character and its line number.
-Example:
+SyntaxError: unexpected or misplaced tokens.
 
-`Illegal character '$' at line 3`
+IndentationError: mismatched INDENT / DEDENT tokens (passed from the lexer).
 
-2. Indentation errors → reported when the indentation depth is inconsistent or unexpected.
+Unexpected EOF: unclosed blocks or parentheses.
 
-Example:
-
-`Indentation Error at line 5: Inconsistent indentation`
-
-
-All errors are collected in a list (errors) and also printed during execution.
+All errors are stored in an errors list and displayed at the end of execution, allowing the process to continue collecting multiple issues in one pass.
 
 
 ## Design 
 
-The design follows a two-stage filtering process:
+The parser aims for:
 
-Tokenization → raw tokens are generated using PLY rules (t_PLUS, t_NUMBER, etc.).
+Clarity: Pythonic grammar representation.
 
-Indentation filtering → a custom post-processor (track_indent + filter_indent) transforms whitespace and newlines into proper INDENT and DEDENT tokens.
+Modularity: clean separation between lexer, parser, and AST handling.
 
-This design separates lexical analysis from block structure detection, making the lexer modular and easier to maintain.
+Extensibility: easy addition of new constructs (e.g., try/except, match, or custom decorators).
 
-The main lexer is wrapped in the IndentLexer class, which integrates both stages and provides a simple API:
-
-input(source_code) → feed input to the lexer
-
-token() → retrieve the next token
+Together with the lexer, this parser forms a solid foundation for building interpreters, compilers, or static analyzers for Fangless Python.
 
 ## Requirements
 
@@ -138,35 +79,13 @@ Recommended editor: VSCode or PyCharm for syntax highlighting and debugging
 To execute the code, you should be placed in the folder containing all the repo files. 
 Then, you can execute: 
 
-    python Lexer.py <input file>
+    python Parser.py <input file>
 
 or 
 
-    py Lexer.py <input file> 
+    py Parser.py <input file> 
 
 Where input file is the name of the python file you want to tokenize. You can use Prueba.txt or Prueba2.txt or any other file written using a python language. 
-
-
-##  Output examples
-
-Command used: 
-
-    py Lexer.py Prueba2.txt
-
-Expected output: 
-
-    LexToken(DEF,'def',1,0)
-    LexToken(WHITESPACE,' ',1,3)
-    LexToken(ID,'sum',1,4)
-    LexToken(LPAREN,'(',1,7)
-    ...
-    LexToken(DEDENT,None,8,0)
-    LexToken(DEDENT,None,8,0)
-    LexToken(ENDMARKER,None,8,0)
-
-    ===== Resume: ALL ERRORS FOUND =====
-    Indentation Error at line 7: Error 01!! Block must be indented
-    Indentation Error at line 8: Error 01!! Block must be indented
 
 
 
