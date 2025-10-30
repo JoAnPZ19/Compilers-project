@@ -1,3 +1,4 @@
 # Create each time
 parsetab.py
 *__pycache__/*
+*.out
