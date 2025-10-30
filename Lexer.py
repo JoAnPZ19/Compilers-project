@@ -153,7 +153,8 @@ MUST_INDENT = 2
 def _new_token_manual(type, lineno=None, lexer=None):
     tok = lex.LexToken()
     tok.lexpos = 0
-    tok.value = None
+    # poner value = type para que p.value no sea None (mejor diagnóstico)
+    tok.value = type
     tok.type = type
     tok.lineno = lineno if lineno is not None else (lexer.lineno if lexer else 0)
     return tok
@@ -163,7 +164,6 @@ def DEDENT(lineno):
 
 def INDENT(lineno):
     return _new_token_manual("INDENT", lineno)
-
 
 '''
 def DEDENT(lineno):
@@ -415,22 +415,35 @@ def final_indent(lexer, add_endmarker=True):
 
 class IndentLexer(object):
     def __init__(self, debug=0, reflags=0):
-        self.lexer = lex.lex(debug=debug, reflags=reflags)
+        self._inner = lex.lex(debug=debug, reflags=reflags)
         self.token_stream = None
+        self._endmarker_emitted = False
+        self.add_endmarker = True
 
     def input(self, s, add_endmarker=True):
         global indent_stack
-        indent_stack = [0]  # Reset stack for each input
-        self.lexer.input(s)
-        self.token_stream = final_indent(self.lexer, add_endmarker)
+        indent_stack = [0]  
+        if s is None:
+            s = ""
+        if not s.endswith("\n"):
+            s = s + "\n"
+        self.add_endmarker = add_endmarker
+        self._endmarker_emitted = False
+        self._inner.input(s)
+        self.token_stream = final_indent(self._inner, add_endmarker=False)
 
     def token(self):
         try:
-            return next(self.token_stream)
+            tok = next(self.token_stream)
+            return tok
         except StopIteration:
+            if not self._endmarker_emitted and self.add_endmarker:
+                self._endmarker_emitted = True
+                end_tok = _new_token_manual("ENDMARKER", getattr(self._inner, "lineno", 0), lexer=self._inner)
+                return end_tok
             return None
 
-lexer = IndentLexer()
+
 
 
 '''

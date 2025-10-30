@@ -44,9 +44,13 @@ class Parser:
         if not p:
             error_msg = f"Unexpected end of input"
             self.errors.append(error_msg)
-        else:
-            error_msg = f"Syntax error on '{p.value}' at line {p.lineno}"
-            self.errors.append(error_msg)
+            print(f"Parser Error: {error_msg}")
+            return
+        tok_type = getattr(p, "type", None)
+        tok_val  = getattr(p, "value", None)
+        lineno   = getattr(p, "lineno", getattr(p, "lineno", "?"))
+        error_msg = f"Syntax error on token type='{tok_type}' value={repr(tok_val)} at line {lineno}"
+        self.errors.append(error_msg)
         print(f"Parser Error: {error_msg}")
 
     def build(self):
@@ -70,11 +74,17 @@ class Parser:
         return result
 
     # Main module
-    def p_module(self, p):
-        """module : statements"""
-        p[0] = Node("module", None, p[1])
-        print(f"Module: {p[0]}")
 
+    def p_module(self, p):
+        """module : statements optional_dedents
+                | statements optional_dedents ENDMARKER"""
+        p[0] = Node("module", None, p[1])
+
+    def p_optional_dedents(self, p):
+        """optional_dedents :
+                        | DEDENT optional_dedents"""
+        p[0] = None
+        
     # Statements
     def p_statements(self, p):
         """statements : statement
@@ -145,14 +155,23 @@ class Parser:
     # Statement if
     def p_if_statement(self, p):
         """if_statement : IF expression COLON suite
-                       | IF expression COLON suite elif_clauses
-                       | IF expression COLON suite elif_clauses ELSE COLON suite"""
+                        | IF expression COLON suite ELSE COLON suite
+                        | IF expression COLON suite elif_clauses
+                        | IF expression COLON suite elif_clauses ELSE COLON suite"""
+        # IF expr : suite
         if len(p) == 5:
             p[0] = Node("if", None, [p[2], p[4]])
+        # IF expr : suite ELSE : suite
+        elif len(p) == 8 and p.slice[5].type == 'ELSE':
+            p[0] = Node("if", None, [p[2], p[4], p[7]])
+        # IF expr : suite elif_clauses
         elif len(p) == 6:
             p[0] = Node("if", None, [p[2], p[4], p[5]])
+        # IF expr : suite elif_clauses ELSE : suite
         else:
             p[0] = Node("if", None, [p[2], p[4], p[5], p[8]])
+
+
 
     def p_elif_clauses(self, p):
         """elif_clauses : elif_clause
@@ -241,11 +260,11 @@ class Parser:
     # Primary expressions
     def p_primary(self, p):
         """primary : atom
-                  | primary LPAREN arguments RPAREN
-                  | primary LBRACKET expression RBRACKET"""
+                | primary LPAREN arguments RPAREN
+                | primary LBRACKET expression RBRACKET"""
         if len(p) == 2:
             p[0] = p[1]
-        elif p[2] == '(':
+        elif p.slice[2].type == 'LPAREN':
             p[0] = Node("call", p[1].value if hasattr(p[1], 'value') else None, p[3])
         else:
             p[0] = Node("subscript", None, [p[1], p[3]])
@@ -346,7 +365,7 @@ if __name__ == "__main__":
         #print(f'real tokens: {tokens_parser}')
 
         parser.lexer.input(src)
-        ast = parser.parser.parse(lexer=parser.lexer.lexer)
+        ast = parser.parser.parse(lexer=parser.lexer)
 
         print("\n=== AST ===")
         print(ast)
