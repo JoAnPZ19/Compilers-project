@@ -33,7 +33,7 @@ class Parser:
             ('left', 'OR'),
             ('left', 'AND'),
             ('left', 'NOT'),
-            ('left', 'EQUAL', 'NOTEQUAL', 'LESS', 'GREATER', 'GREATEREQUAL', 'LESSEQUAL', 'IN', 'IS'),
+            ('left', 'EQUALEQUAL', 'NOTEQUAL', 'LESS', 'GREATER', 'GREATEREQUAL', 'LESSEQUAL', 'IN', 'IS'),
             ('left', 'PLUS', 'MINUS'),
             ('left', 'MULTI', 'DIVIDE', 'MODULE', 'FDIVIDE'),
             ('left', 'POW'),
@@ -146,9 +146,12 @@ class Parser:
     # Suite
     def p_suite(self, p):
         """suite : NEWLINE INDENT statements DEDENT
-                 | simple_statement NEWLINE"""
-        if len(p) == 5:
+                | INDENT statements DEDENT
+                | simple_statement NEWLINE"""
+        if len(p) == 5 and p.slice[1].type == 'NEWLINE':
             p[0] = Node("suite", None, p[3])
+        elif len(p) == 4 and p.slice[1].type == 'INDENT':
+            p[0] = Node("suite", None, p[2])
         else:
             p[0] = Node("suite", None, [p[1]])
 
@@ -244,13 +247,14 @@ class Parser:
         p[0] = Node("unary_op", p[1], [p[2]])
 
     def p_comparison_expression(self, p):
-        """comparison_expression : expression EQUAL expression
-                               | expression NOTEQUAL expression
-                               | expression LESS expression
-                               | expression GREATER expression
-                               | expression LESSEQUAL expression
-                               | expression GREATEREQUAL expression"""
+        """comparison_expression : expression EQUALEQUAL expression
+                                | expression NOTEQUAL expression
+                                | expression LESS expression
+                                | expression GREATER expression
+                                | expression LESSEQUAL expression
+                                | expression GREATEREQUAL expression"""
         p[0] = Node("comparison", p[2], [p[1], p[3]])
+
 
     def p_boolean_expression(self, p):
         """boolean_expression : expression AND expression
