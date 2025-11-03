@@ -1,4 +1,4 @@
-# Based on https://github.com/ThaisBarrosAlvim/mini-compiler-python/blob/master/src/lexer.py
+# Parser.py (reemplaza completamente tu Parser.py con este contenido)
 import ply.yacc as yacc
 import Lexer
 import os
@@ -28,7 +28,8 @@ class Parser:
         self.debug = debug
         self.tokens = tokens
         self.lexer = Lexer.IndentLexer(debug=self.debug)
-        
+
+        # precedence (some operators grouped)
         self.precedence = (
             ('left', 'OR'),
             ('left', 'AND'),
@@ -42,16 +43,16 @@ class Parser:
 
     def p_error(self, p):
         if not p:
-            error_msg = f"Unexpected end of input"
-            self.errors.append(error_msg)
-            print(f"Parser Error: {error_msg}")
+            msg = "Unexpected end of input"
+            self.errors.append(msg)
+            print(f"Parser Error: {msg}")
             return
         tok_type = getattr(p, "type", None)
         tok_val  = getattr(p, "value", None)
         lineno   = getattr(p, "lineno", getattr(p, "lineno", "?"))
-        error_msg = f"Syntax error on token type='{tok_type}' value={repr(tok_val)} at line {lineno}"
-        self.errors.append(error_msg)
-        print(f"Parser Error: {error_msg}")
+        msg = f"Syntax error on token type='{tok_type}' value={repr(tok_val)} at line {lineno}"
+        self.errors.append(msg)
+        print(f"Parser Error: {msg}")
 
     def build(self):
         for f in ("parsetab.py", "parser.out"):
@@ -59,33 +60,30 @@ class Parser:
                 os.remove(f)
         self.parser = yacc.yacc(module=self, debug=self.debug, start='module', write_tables=True)
 
-    def parse_data(self, data):
-        self.data = data
-        self.lexer.input(data)
-        result = self.parser.parse(lexer=self.lexer)
-        print(f"Result of parse_data: {result}")
-        return result
-
     def parse(self, source, debug=False):
         self.errors = []
         self.lexer.input(source)
         result = self.parser.parse(lexer=self.lexer, debug=debug)
-        print(result)
         return result
 
-    # Main module
+    # ---- Grammar ----
 
     def p_module(self, p):
         """module : statements optional_dedents
-                | statements optional_dedents ENDMARKER"""
-        p[0] = Node("module", None, p[1])
+                  | optional_dedents
+                  | statements optional_dedents ENDMARKER"""
+        if len(p) == 2:
+            # only optional dedents or empty
+            p[0] = Node("module", None, [])
+        else:
+            p[0] = Node("module", None, p[1])
 
     def p_optional_dedents(self, p):
         """optional_dedents :
-                        | DEDENT optional_dedents"""
+                         | DEDENT optional_dedents"""
         p[0] = None
-        
-    # Statements
+
+    # statements: one or more statements
     def p_statements(self, p):
         """statements : statement
                       | statements statement"""
@@ -94,7 +92,6 @@ class Parser:
         else:
             p[0] = p[1] + [p[2]]
 
-    # Individual statement
     def p_statement(self, p):
         """statement : simple_statement NEWLINE
                      | compound_statement
@@ -106,75 +103,81 @@ class Parser:
         else:
             p[0] = Node("pass")
 
-    # Simple statements
     def p_simple_statement(self, p):
         """simple_statement : expression_statement
-                           | assignment_statement
-                           | return_statement
-                           | pass_statement"""
+                            | assignment_statement
+                            | return_statement
+                            | pass_statement"""
         p[0] = p[1]
 
-    # Compound statements
     def p_compound_statement(self, p):
         """compound_statement : function_def
-                             | if_statement
-                             | while_statement
-                             | for_statement"""
+                              | if_statement
+                              | while_statement
+                              | for_statement"""
         p[0] = p[1]
 
-    # Def function
+    
+    # suite: either simple_statement NEWLINE or indented block
+    def p_suite(self, p):
+        """suite : simple_statement NEWLINE
+                | NEWLINE INDENT statements DEDENT
+                | INDENT statements DEDENT"""
+        # Simple statement in one line
+        if len(p) == 3 and isinstance(p[1], Node):
+            p[0] = Node("suite", None, [p[1]])
+        # Block with indented statements
+        else:
+            # Handle both forms (with or without preceding NEWLINE)
+            stmts = p[2] if len(p) == 4 else p[3]
+            p[0] = Node("suite", None, stmts)
+
+    # function definition
     def p_function_def(self, p):
         """function_def : DEF ID LPAREN parameters RPAREN COLON suite"""
         p[0] = Node("function_def", p[2], [Node("parameters", None, p[4]), p[7]])
 
     def p_parameters(self, p):
-        """parameters : parameter_list
-                      | empty"""
-        if p[1] is None:
+        """parameters :
+                      | parameter_list"""
+        if len(p) == 1:
             p[0] = []
         else:
             p[0] = p[1]
 
     def p_parameter_list(self, p):
-        """parameter_list : ID
-                         | parameter_list COMMA ID"""
+        """parameter_list : parameter
+                          | parameter_list COMMA parameter"""
         if len(p) == 2:
-            p[0] = [Node("parameter", p[1])]
+            p[0] = [p[1]]
         else:
-            p[0] = p[1] + [Node("parameter", p[3])]
+            p[0] = p[1] + [p[3]]
 
-    # Suite
-    def p_suite(self, p):
-        """suite : NEWLINE INDENT statements DEDENT
-                | INDENT statements DEDENT
-                | simple_statement NEWLINE"""
-        if len(p) == 5 and p.slice[1].type == 'NEWLINE':
-            p[0] = Node("suite", None, p[3])
-        elif len(p) == 4 and p.slice[1].type == 'INDENT':
-            p[0] = Node("suite", None, p[2])
+    def p_parameter(self, p):
+        """parameter : ID
+                     | ID EQUAL expression"""
+        if len(p) == 2:
+            p[0] = Node("parameter", p[1])
         else:
-            p[0] = Node("suite", None, [p[1]])
+            p[0] = Node("parameter", p[1], [p[3]])
 
-    # Statement if
+
+
+    # if / elif / else
     def p_if_statement(self, p):
         """if_statement : IF expression COLON suite
-                        | IF expression COLON suite ELSE COLON suite
                         | IF expression COLON suite elif_clauses
+                        | IF expression COLON suite ELSE COLON suite
                         | IF expression COLON suite elif_clauses ELSE COLON suite"""
-        # IF expr : suite
         if len(p) == 5:
             p[0] = Node("if", None, [p[2], p[4]])
-        # IF expr : suite ELSE : suite
+        elif len(p) == 7:
+            # with elif_clauses
+            p[0] = Node("if", None, [p[2], p[4], p[5]])
         elif len(p) == 8 and p.slice[5].type == 'ELSE':
             p[0] = Node("if", None, [p[2], p[4], p[7]])
-        # IF expr : suite elif_clauses
-        elif len(p) == 6:
-            p[0] = Node("if", None, [p[2], p[4], p[5]])
-        # IF expr : suite elif_clauses ELSE : suite
         else:
             p[0] = Node("if", None, [p[2], p[4], p[5], p[8]])
-
-
 
     def p_elif_clauses(self, p):
         """elif_clauses : elif_clause
@@ -188,62 +191,60 @@ class Parser:
         """elif_clause : ELIF expression COLON suite"""
         p[0] = Node("elif", None, [p[2], p[4]])
 
-    # Statement while
     def p_while_statement(self, p):
         """while_statement : WHILE expression COLON suite"""
         p[0] = Node("while", None, [p[2], p[4]])
 
-    # Statement for
+    # for: target can be any expression (more flexible)
     def p_for_statement(self, p):
-        """for_statement : FOR ID IN expression COLON suite"""
-        p[0] = Node("for", None, [Node("target", p[2]), p[4], p[6]])
+        """for_statement : FOR expression IN expression COLON suite"""
+        p[0] = Node("for", None, [p[2], p[4], p[6]])
 
-    # Return statement
+    # return / pass
     def p_return_statement(self, p):
         """return_statement : RETURN
-                           | RETURN expression"""
+                            | RETURN expression"""
         if len(p) == 2:
             p[0] = Node("return")
         else:
             p[0] = Node("return", None, [p[2]])
 
-    # Pass statement
     def p_pass_statement(self, p):
         """pass_statement : PASS"""
         p[0] = Node("pass")
 
-    # Assignment
+    # assignment
     def p_assignment_statement(self, p):
         """assignment_statement : ID EQUAL expression"""
         p[0] = Node("assignment", p[1], [p[3]])
 
-    # Expression statement
+    # expression statement
     def p_expression_statement(self, p):
         """expression_statement : expression"""
         p[0] = Node("expression_stmt", None, [p[1]])
 
-    # Expresiones
+    # --- expressions ---
     def p_expression(self, p):
         """expression : binary_expression
-                     | unary_expression
-                     | comparison_expression
-                     | boolean_expression
-                     | primary"""
+                      | unary_expression
+                      | comparison_expression
+                      | boolean_expression
+                      | primary"""
         p[0] = p[1]
 
     def p_binary_expression(self, p):
         """binary_expression : expression PLUS expression
-                           | expression MINUS expression
-                           | expression MULTI expression
-                           | expression DIVIDE expression
-                           | expression FDIVIDE expression
-                           | expression MODULE expression
-                           | expression POW expression"""
+                             | expression MINUS expression
+                             | expression MULTI expression
+                             | expression DIVIDE expression
+                             | expression FDIVIDE expression
+                             | expression MODULE expression
+                             | expression POW expression"""
         p[0] = Node("binary_op", p[2], [p[1], p[3]])
 
     def p_unary_expression(self, p):
         """unary_expression : MINUS expression %prec UMINUS
-                           | NOT expression"""
+                            | NOT expression"""
         p[0] = Node("unary_op", p[1], [p[2]])
 
     def p_comparison_expression(self, p):
@@ -252,26 +253,34 @@ class Parser:
                                 | expression LESS expression
                                 | expression GREATER expression
                                 | expression LESSEQUAL expression
-                                | expression GREATEREQUAL expression"""
+                                | expression GREATEREQUAL expression
+                                | expression IN expression
+                                | expression IS expression"""
         p[0] = Node("comparison", p[2], [p[1], p[3]])
-
 
     def p_boolean_expression(self, p):
         """boolean_expression : expression AND expression
-                            | expression OR expression"""
+                              | expression OR expression"""
         p[0] = Node("boolean_op", p[2], [p[1], p[3]])
 
-    # Primary expressions
+    # primary: atoms, calls, indexing, attributes
     def p_primary(self, p):
         """primary : atom
                 | primary LPAREN arguments RPAREN
-                | primary LBRACKET expression RBRACKET"""
+                | primary LBRACKET subscript_item RBRACKET
+                | primary DOT ID"""
         if len(p) == 2:
             p[0] = p[1]
         elif p.slice[2].type == 'LPAREN':
-            p[0] = Node("call", p[1].value if hasattr(p[1], 'value') else None, p[3])
-        else:
+            func_node = p[1]
+            args = p[3] if p[3] is not None else []
+            name = func_node.value if isinstance(func_node, Node) and func_node.type == "identifier" else None
+            p[0] = Node("call", name, args)
+        elif p.slice[2].type == 'LBRACKET':
             p[0] = Node("subscript", None, [p[1], p[3]])
+        else:
+            p[0] = Node("attribute", p[3], [p[1]])
+
 
     def p_arguments(self, p):
         """arguments : expression_list
@@ -283,13 +292,34 @@ class Parser:
 
     def p_expression_list(self, p):
         """expression_list : expression
-                          | expression_list COMMA expression"""
+                        | expression_list COMMA expression"""
         if len(p) == 2:
             p[0] = [p[1]]
         else:
             p[0] = p[1] + [p[3]]
 
-    # Atoms
+    # subscript item (index or slice)
+    def p_subscript_item(self, p):
+        """subscript_item : expression
+                          | slice"""
+        p[0] = p[1]
+
+    def p_slice(self, p):
+        """slice : expression COLON expression
+                 | COLON expression
+                 | expression COLON
+                 | COLON"""
+        if len(p) == 4:
+            p[0] = Node("slice", None, [p[1], p[3]])
+        elif len(p) == 3:
+            if p.slice[1].type == 'COLON':
+                p[0] = Node("slice", None, [None, p[2]])
+            else:
+                p[0] = Node("slice", None, [p[1], None])
+        else:
+            p[0] = Node("slice", None, [None, None])
+
+    # atoms and literals
     def p_atom(self, p):
         """atom : ID
                | NUMBER
@@ -299,85 +329,155 @@ class Parser:
                | TRUE
                | FALSE
                | NONE
-               | LPAREN expression RPAREN"""
+               | LPAREN paren_contents RPAREN"""
         if len(p) == 2:
-            if p.slice[1].type == 'ID':
+            ttype = p.slice[1].type
+            if ttype == 'ID':
                 p[0] = Node("identifier", p[1])
-            elif p.slice[1].type in ('NUMBER', 'DECIMAL'):
+            elif ttype in ('NUMBER', 'DECIMAL'):
                 p[0] = Node("number", p[1])
-            elif p.slice[1].type in ('SSTRING', 'DSTRING'):
+            elif ttype in ('SSTRING', 'DSTRING'):
                 p[0] = Node("string", p[1])
-            elif p.slice[1].type in ('TRUE', 'FALSE'):
+            elif ttype in ('TRUE', 'FALSE'):
                 p[0] = Node("boolean", p[1])
-            elif p.slice[1].type == 'NONE':
+            elif ttype == 'NONE':
                 p[0] = Node("none")
         else:
             p[0] = p[2]
+
+    def p_paren_contents(self, p):
+        """paren_contents : expression
+                          | expression COMMA
+                          | expression_list"""
+
+        if len(p) == 2:
+            if isinstance(p[1], list):
+                if len(p[1]) == 1:
+                    p[0] = p[1][0]
+                else:
+                    p[0] = Node("tuple", None, p[1])
+            else:
+                p[0] = p[1]
+        else:
+            p[0] = Node("tuple", None, [p[1]])
+
+
+
+    # list literal
+    def p_list_literal(self, p):
+        """atom : LBRACKET list_items RBRACKET
+                | LBRACKET NEWLINE list_items NEWLINE RBRACKET"""
+        if len(p) == 4:
+            p[0] = Node("list", None, p[2])
+        else:
+            p[0] = Node("list", None, p[3])
+
+    def p_list_items(self, p):
+        """list_items : empty
+                      | expression
+                      | list_items COMMA expression
+                      | list_items COMMA NEWLINE expression"""
+        if p[1] is None:
+            p[0] = []
+        elif len(p) == 2:
+            p[0] = [p[1]]
+        else:
+            # p[2] is ','
+            if len(p) == 4:
+                p[0] = p[1] + [p[3]]
+            else:
+                p[0] = p[1] + [p[4]]
+
+    # dict literal
+    def p_dict_literal(self, p):
+        """atom : LKEY dict_pairs RKEY
+                | LKEY NEWLINE dict_pairs NEWLINE RKEY"""
+        if len(p) == 4:
+            p[0] = Node("dict", None, p[2])
+        else:
+            p[0] = Node("dict", None, p[3])
+
+    def p_dict_pairs(self, p):
+        """dict_pairs : empty
+                      | dict_pair
+                      | dict_pairs COMMA dict_pair
+                      | dict_pairs COMMA NEWLINE dict_pair"""
+        if p[1] is None:
+            p[0] = []
+        elif len(p) == 2:
+            p[0] = [p[1]]
+        else:
+            if len(p) == 4:
+                p[0] = p[1] + [p[3]]
+            else:
+                p[0] = p[1] + [p[4]]
+
+    def p_dict_pair(self, p):
+        """dict_pair : expression COLON expression"""
+        p[0] = Node("pair", None, [p[1], p[3]])
+
+    # set literal
+    def p_set_literal(self, p):
+        """atom : LKEY set_items RKEY"""
+        p[0] = Node("set", None, p[2])
+
+    def p_set_items(self, p):
+        """set_items : empty
+                     | expression
+                     | set_items COMMA expression"""
+        if p[1] is None:
+            p[0] = []
+        elif len(p) == 2:
+            p[0] = [p[1]]
+        else:
+            p[0] = p[1] + [p[3]]
 
     def p_empty(self, p):
         """empty :"""
         p[0] = None
 
-    
-
-# Test fx
+# ---- Test helper ----
 def test_parser():
-    test_code = """
+    code = """
 def random_operation(a, b):
-    return a * b + 2.6548
-
-def fibonacci(n):
-    if n == 1 or n == 2:
-        return 1
-    elif n == 0:
-        return n / 0
-    else:
-        return fibonacci(n - 1) + fibonacci(n - 2)
+    c = a + b
+    # Hi I'm a comment!
+    return c + a * b + 2.6548
 """
-
     parser = Parser(debug=False)
     parser.build()
-    ast = parser.parse(test_code)
-    
+    ast = parser.parse(code)
     print("=== AST ===")
     print(ast)
-    
     if parser.errors:
         print("\n=== ERRORES ===")
-        for error in parser.errors:
-            print(error)
+        for e in parser.errors:
+            print(e)
 
 if __name__ == "__main__":
     import sys
-    tokens_parser = []
     if len(sys.argv) > 1:
-        filename = sys.argv[1]
-        with open(filename, "r", encoding="utf-8") as f:
+        fname = sys.argv[1]
+        with open(fname, "r", encoding="utf-8") as f:
             src = f.read()
-        
         parser = Parser(debug=False)
         parser.build()
-        
-        # Print tokens before parsing
+
+        # print tokens for debugging
         parser.lexer.input(src)
         tok = parser.lexer.token()
         while tok:
-            tokens_parser.append(tok)
-            print(tok)
+            print(f"{tok.lineno:3} {tok.type:12} {repr(tok.value)}")
             tok = parser.lexer.token()
 
-        #print(f'real tokens: {tokens_parser}')
-
+        # parse
         parser.lexer.input(src)
         ast = parser.parser.parse(lexer=parser.lexer)
-
         print("\n=== AST ===")
         print(ast)
-        
         if parser.errors:
             print("\n=== ERRORES ===")
-            for error in parser.errors:
-                print(error)
+            for e in parser.errors:
+                print(e)
     else:
         test_parser()
-

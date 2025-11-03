@@ -1,110 +1,80 @@
-# Lexer.py - Lexer autocontenido por línea (no depende de PLY para indentación)
-# Esta versión produce tokens con atributos: type, value, lineno, lexpos
-# Diseñado para ser compatible con tu Parser.py (usa los mismos nombres de tokens/reserved).
+# debug_tokens.py
+import sys
+sys.path.append('.')  # para cargar los módulos locales
+import Lexer
 
-import re
+if len(sys.argv) < 2:
+    print("Uso: python debug_tokens.py <archivo>")
+    sys.exit(1)
 
-errors = []
-indent_stack = [0]
+fname = sys.argv[1]
+with open(fname, "r", encoding="utf-8") as f:
+    src = f.read()
 
-reserved = {
-    'and': 'AND',
-    'as': 'AS',
-    'assert': 'ASSERT',
-    'async': 'ASYNC',
-    'await': 'AWAIT',
-    'begin': 'BEGIN',
-    'break': 'BREAK',
-    'class': 'CLASS',
-    'continue': 'CONTINUE',
-    'def': 'DEF',
-    'do': 'DO',
-    'elif': 'ELIF',
-    'else': 'ELSE',
-    'end': 'END',
-    'except': 'EXCEPT',
-    'false': 'FALSE',
-    'finally': 'FINALLY',
-    'for': 'FOR',
-    'from': 'FROM',
-    'if': 'IF',
-    'in': 'IN',
-    'is': 'IS',
-    'none': 'NONE',
-    'not': 'NOT',
-    'or': 'OR',
-    'pass': 'PASS',
-    'read': 'READ',
-    'return': 'RETURN',
-    'then': 'THEN',
-    'to': 'TO',
-    'true': 'TRUE',
-    'try': 'TRY',
-    'while': 'WHILE',
-    'write': 'WRITE',
-    'yield': 'YIELD',
-}
+lex = Lexer.IndentLexer()
+lex.input(src)
 
-# tokens list (must match Parser.tokens)
-tokens = [*reserved.values()] + [
-    'ID', 'NUMBER', 'DECIMAL', 'SSTRING', 'DSTRING',
-    'PLUS', 'MINUS', 'MULTI', 'DIVIDE', 'LPAREN', 'RPAREN', 'COMMA', 'SEMICOLON',
-    'COLON', 'EQUAL', 'NOTEQUAL', 'LESS', 'LESSEQUAL', 'GREATER', 'GREATEREQUAL',
-    'ASSIGN', 'DOT', 'DOUBLEGREATER', 'DOUBLELESS', 'TRIPLELESS',
-    'TRIPLEGREATER', 'LESSGREATER', 'TERNAL', 'LITERAL', 'LBRACKET', 'RBRACKET',
-    'LKEY', 'RKEY', 'WHITESPACE', 'NEWLINE', 'FDIVIDE', 'MODULE', 'POW',
-    'EQUALEQUAL', 'PLUSEQUAL', 'MINUSEQUAL', 'MULTIEQUAL', 'DIVEQUAL', 'MODEQUAL',
-    'FDIVEQUAL', 'POWEREQUAL', 'INDENT', 'DEDENT', 'ENDMARKER', 'QUOTATIONMARK',
-    'DQUOTATIONMARK', 'UMINUS'
-]
+paren_stack = []  # stack of (token, lineno, col approximate)
+line_positions = src.splitlines(True)
 
-# regex pieces (order matters: multi-char operators first)
-_regex_parts = [
-    (r'==', 'EQUALEQUAL'),
-    (r'!=', 'NOTEQUAL'),
-    (r'<=', 'LESSEQUAL'),
-    (r'>=', 'GREATEREQUAL'),
-    (r'\+=', 'PLUSEQUAL'),
-    (r'-=', 'MINUSEQUAL'),
-    (r'\*=', 'MULTIEQUAL'),
-    (r'/=', 'DIVEQUAL'),
-    (r'%=', 'MODEQUAL'),
-    (r'//=', 'FDIVEQUAL'),
-    (r'\*\*=', 'POWEREQUAL'),
-    (r'//', 'FDIVIDE'),
-    (r'\*\*', 'POW'),
-    (r'>>>' , 'TRIPLEGREATER'),
-    (r'<<<' , 'TRIPLELESS'),
-    (r'>>' , 'DOUBLEGREATER'),
-    (r'<<' , 'DOUBLELESS'),
-    (r'<>' , 'LESSGREATER'),
-    (r':=', 'ASSIGN'),
-    (r'\(', 'LPAREN'),
-    (r'\)', 'RPAREN'),
-    (r'\[', 'LBRACKET'),
-    (r'\]', 'RBRACKET'),
-    (r'\{', 'LKEY'),
-    (r'\}', 'RKEY'),
-    (r',', 'COMMA'),
-    (r';', 'SEMICOLON'),
-    (r':', 'COLON'),
-    (r'\.', 'DOT'),
-    (r'\+', 'PLUS'),
-    (r'-', 'MINUS'),
-    (r'\*', 'MULTI'),
-    (r'/', 'DIVIDE'),
-    (r'%', 'MODULE'),
-    (r'\?', 'TERNAL'),
-    (r'==', 'EQUALEQUAL'),
-    (r'<=', 'LESSEQUAL'),
-    (r'>=', 'GREATEREQUAL'),
-]
+def token_pos(tok):
+    # approximate column: find tok.value in its line (best-effort)
+    try:
+        linetext = line_positions[tok.lineno - 1]
+        col = linetext.find(str(tok.value))
+        if col == -1:
+            col = 0
+    except Exception:
+        col = 0
+    return col
 
-# number, identifier, string
-_number_re = re.compile(r'\d+(\.\d+)?')
-_id_re = re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
-_sstring_re = re.compile(r"'([^\\\n]|(\\.))*?'")
-_dstring_re = re.compile(r"\"([^\\\n]|(\\.))*?\"")
+print("=== TOKENS (lineno, type, value) and bracket nesting ===")
+count = 0
+while True:
+    tok = lex.token()
+    if not tok:
+        break
+    count += 1
+    col = token_pos(tok)
+    t = f"{tok.lineno:3} {tok.type:12} {repr(tok.value):30} col={col}"
+    # update stack for brackets
+    if tok.type in ('LPAREN', 'LBRACKET', 'LKEY'):
+        paren_stack.append((tok.type, tok.lineno, col))
+    elif tok.type in ('RPAREN', 'RBRACKET', 'RKEY'):
+        # map closers to openers
+        expected = None
+        if tok.type == 'RPAREN': expected = 'LPAREN'
+        if tok.type == 'RBRACKET': expected = 'LBRACKET'
+        if tok.type == 'RKEY': expected = 'LKEY'
+        if not paren_stack:
+            t += "   <<UNMATCHED_CLOSER>>"
+        else:
+            opener, olineno, ocol = paren_stack[-1]
+            if opener != expected:
+                t += f"   <<MISMATCH opener={opener} at line {olineno}>>"
+                paren_stack.pop()
+            else:
+                paren_stack.pop()
+    print(t)
+    # stop early if many tokens
+    if count > 2000:
+        print("... too many tokens, stopped")
+        break
 
-# compile operator patterns into a single regex for speed (longest-first)
-_ops_pattern
+print("\n=== STACK AFTER TOKENIZATION ===")
+if paren_stack:
+    for opener, lineno, col in paren_stack:
+        print(f"UNMATCHED opener {opener} at line {lineno} col={col}")
+else:
+    print("All brackets matched at lexer level.")
+
+# Also re-run lexer but print tokens around the problematic area (line ~50-70)
+print("\n=== TOKENS AROUND LINES 45-75 (for quick inspection) ===")
+lex.input(src)
+tok = lex.token()
+while tok:
+    if 45 <= tok.lineno <= 75:
+        print(f"{tok.lineno:3} {tok.type:12} {repr(tok.value)}")
+    tok = lex.token()
+
+print("\nDone.")

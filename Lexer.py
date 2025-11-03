@@ -56,7 +56,7 @@ tokens = [*reserved.values()] + [
     'LKEY', 'RKEY', 'WHITESPACE', 'NEWLINE', 'FDIVIDE', 'MODULE', 'POW', 
     'EQUALEQUAL', 'PLUSEQUAL', 'MINUSEQUAL', 'MULTIEQUAL', 'DIVEQUAL', 'MODEQUAL', 
     'FDIVEQUAL', 'POWEREQUAL', 'INDENT', 'DEDENT', 'ENDMARKER', 'QUOTATIONMARK',
-    'DQUOTATIONMARK', 'UMINUS'        
+    'DQUOTATIONMARK', 'UMINUS', 'COMMENT'       
 ]
 
 # Regular expression rules for simple tokens
@@ -139,7 +139,7 @@ def t_ID(t):
 
 def t_COMMENT(t):
     r'\#.*'
-    pass
+    return t
 
 def t_error(t):
     errors.append(f"Illegal character '{t.value[0]}' at line {t.lineno}")
@@ -184,6 +184,8 @@ def track_indent(lexer, tokens):
         elif token.type == "NEWLINE":
             lexer.at_line_start = True
             if indent_state == MIGHT_INDENT:
+                indent_state = MUST_INDENT
+            elif indent_state == MUST_INDENT:
                 indent_state = MUST_INDENT
             else:
                 indent_state = NO_INDENT
@@ -276,6 +278,9 @@ def filter_indent(tokens, lexer):
                 pending_whitespace = None
 
         # Yield the actual token
+        if token.type == "COMMENT":
+            continue
+        
         yield token
         last_token_type = token.type
 
