@@ -177,7 +177,7 @@ def track_indent(lexer, tokens):
         token.at_line_start = getattr(lexer, "at_line_start", False)
         token.must_indent = False
 
-        if token.type == "COLON":
+        if token.type == "COLON" or token.type == "LKEY":
             indent_state = MIGHT_INDENT
             lexer.at_line_start = False
 
