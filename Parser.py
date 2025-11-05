@@ -83,6 +83,16 @@ class Parser:
                          | DEDENT optional_dedents"""
         p[0] = None
 
+    def p_optional_newlines(self, p):
+        """optional_newlines :
+                            | NEWLINE optional_newlines"""
+        p[0] = None
+
+    def p_optional_indents(self, p):
+        """optional_indents :
+                            | INDENT optional_indents"""
+        p[0] = None
+
     # statements: one or more statements
     def p_statements(self, p):
         """statements : statement
@@ -121,16 +131,17 @@ class Parser:
     # suite: either simple_statement NEWLINE or indented block
     def p_suite(self, p):
         """suite : simple_statement NEWLINE
-                | NEWLINE INDENT statements DEDENT
-                | INDENT statements DEDENT"""
-        # Simple statement in one line
+                | NEWLINE INDENT statements optional_dedents
+                | INDENT statements optional_dedents
+                | NEWLINE INDENT DEDENT"""
         if len(p) == 3 and isinstance(p[1], Node):
             p[0] = Node("suite", None, [p[1]])
-        # Block with indented statements
-        else:
-            # Handle both forms (with or without preceding NEWLINE)
+        elif len(p) in (5, 4):
             stmts = p[2] if len(p) == 4 else p[3]
-            p[0] = Node("suite", None, stmts)
+            p[0] = Node("suite", None, stmts if isinstance(stmts, list) else [stmts])
+        else:
+            p[0] = Node("suite", None, [])
+
 
     # function definition
     def p_function_def(self, p):
@@ -347,8 +358,8 @@ class Parser:
 
     def p_paren_contents(self, p):
         """paren_contents : expression
-                          | expression COMMA
-                          | expression_list"""
+                          | expression_list
+                          | expression_list COMMA"""
 
         if len(p) == 2:
             if isinstance(p[1], list):
@@ -359,82 +370,106 @@ class Parser:
             else:
                 p[0] = p[1]
         else:
-            p[0] = Node("tuple", None, [p[1]])
+            lst = p[1] if isinstance(p[1], list) else [p[1]]
+            p[0] = Node("tuple", None, lst)
 
+# ---- Literales con soporte para forma multilínea con INDENT/DEDENT ----
 
-
-    # list literal
-    def p_list_literal(self, p):
-        """atom : LBRACKET list_items RBRACKET
-                | LBRACKET NEWLINE list_items NEWLINE RBRACKET"""
-        if len(p) == 4:
-            p[0] = Node("list", None, p[2])
-        else:
-            p[0] = Node("list", None, p[3])
-
-    def p_list_items(self, p):
-        """list_items : empty
-                      | expression
-                      | list_items COMMA expression
-                      | list_items COMMA NEWLINE expression"""
-        if p[1] is None:
-            p[0] = []
-        elif len(p) == 2:
-            p[0] = [p[1]]
-        else:
-            # p[2] is ','
-            if len(p) == 4:
-                p[0] = p[1] + [p[3]]
-            else:
-                p[0] = p[1] + [p[4]]
-
-    # dict literal
     def p_dict_literal(self, p):
         """atom : LKEY dict_pairs RKEY
-                | LKEY NEWLINE dict_pairs NEWLINE RKEY"""
+                | LKEY NEWLINE INDENT dict_pairs NEWLINE DEDENT RKEY"""
+        # Inline: { a: b, ... }
         if len(p) == 4:
             p[0] = Node("dict", None, p[2])
         else:
-            p[0] = Node("dict", None, p[3])
+            # Multilínea: { \n INDENT dict_pairs NEWLINE DEDENT }
+            p[0] = Node("dict", None, p[5])
 
     def p_dict_pairs(self, p):
         """dict_pairs : empty
-                      | dict_pair
-                      | dict_pairs COMMA dict_pair
-                      | dict_pairs COMMA NEWLINE dict_pair"""
+                    | dict_pair
+                    | dict_pairs COMMA dict_pair
+                    | dict_pairs NEWLINE dict_pair
+                    | dict_pairs COMMA NEWLINE dict_pair
+                    | dict_pairs COMMA"""
         if p[1] is None:
             p[0] = []
         elif len(p) == 2:
             p[0] = [p[1]]
+        elif len(p) == 3:
+            # trailing comma
+            p[0] = p[1]
+        elif len(p) == 4:
+            # dict_pairs COMMA dict_pair  OR dict_pairs NEWLINE dict_pair
+            p[0] = p[1] + [p[3]]
         else:
-            if len(p) == 4:
-                p[0] = p[1] + [p[3]]
-            else:
-                p[0] = p[1] + [p[4]]
+            # dict_pairs COMMA NEWLINE dict_pair
+            p[0] = p[1] + [p[4]]
 
     def p_dict_pair(self, p):
         """dict_pair : expression COLON expression"""
         p[0] = Node("pair", None, [p[1], p[3]])
 
-    # set literal
-    def p_set_literal(self, p):
-        """atom : LKEY set_items RKEY"""
-        p[0] = Node("set", None, p[2])
 
-    def p_set_items(self, p):
-        """set_items : empty
-                     | expression
-                     | set_items COMMA expression"""
+    def p_list_literal(self, p):
+        """atom : LBRACKET list_items RBRACKET
+                | LBRACKET NEWLINE INDENT list_items NEWLINE DEDENT RBRACKET"""
+        if len(p) == 4:
+            p[0] = Node("list", None, p[2])
+        else:
+            p[0] = Node("list", None, p[5])
+
+    def p_list_items(self, p):
+        """list_items : empty
+                    | expression
+                    | list_items COMMA expression
+                    | list_items NEWLINE expression
+                    | list_items COMMA NEWLINE expression
+                    | list_items COMMA"""
         if p[1] is None:
             p[0] = []
         elif len(p) == 2:
             p[0] = [p[1]]
-        else:
+        elif len(p) == 3:
+            p[0] = p[1]   # trailing comma
+        elif len(p) == 4:
             p[0] = p[1] + [p[3]]
+        else:
+            p[0] = p[1] + [p[4]]
+
+
+    def p_set_literal(self, p):
+        """atom : LKEY set_items RKEY
+                | LKEY NEWLINE INDENT set_items NEWLINE DEDENT RKEY"""
+        if len(p) == 4:
+            p[0] = Node("set", None, p[2])
+        else:
+            p[0] = Node("set", None, p[5])
+
+    def p_set_items(self, p):
+        """set_items : empty
+                    | expression
+                    | set_items COMMA expression
+                    | set_items NEWLINE expression
+                    | set_items COMMA NEWLINE expression
+                    | set_items COMMA"""
+        if p[1] is None:
+            p[0] = []
+        elif len(p) == 2:
+            p[0] = [p[1]]
+        elif len(p) == 3:
+            p[0] = p[1]
+        elif len(p) == 4:
+            p[0] = p[1] + [p[3]]
+        else:
+            p[0] = p[1] + [p[4]]
+
+
 
     def p_empty(self, p):
         """empty :"""
         p[0] = None
+
 
 # ---- Test helper ----
 def test_parser():
