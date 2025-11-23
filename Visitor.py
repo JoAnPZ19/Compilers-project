@@ -92,6 +92,99 @@ class CppVisitor(Visitor):
                 continue
             self.visit(child)
 
+    def visit_if(self, node):
+        # node estructure
+        # children[0]: condition expression
+        # children[1]: suit for if
+        # children[2]: elif or else (optional)
+        condition = self.visit(node.children[0])
+        self.emit(f"if ({condition}) {{")
+        self.push()
+        self.visit(node.children[1])  # if-body
+        self.pop()
+        self.emit("}")
+        
+        # Handle elif/else
+        if len(node.children) > 2:
+            rest = node.children[2]
+            if is_node(rest):
+                if rest.type == "elif":
+                    # Handle elif chain
+                    self.visit_elif(rest)
+                elif rest.type == "else":
+                    # Handle else
+                    self.emit("else {")
+                    self.push()
+                    self.visit(rest.children[0] if rest.children else rest)
+                    self.pop()
+                    self.emit("}")
+                elif rest.type == "suite":
+                    # Direct else suite
+                    self.emit("else {")
+                    self.push()
+                    self.visit(rest)
+                    self.pop()
+                    self.emit("}")
+    
+    def visit_elif(self, node):
+        #elif node, like else if in C++
+        condition = self.visit(node.children[0])
+        self.emit(f"else if ({condition}) {{")
+        self.push()
+        self.visit(node.children[1])  # elif-body
+        self.pop()
+        self.emit("}")
+        
+        # Check for more elif or else
+        if len(node.children) > 2:
+            rest = node.children[2]
+            if is_node(rest):
+                if rest.type == "elif":
+                    self.visit_elif(rest)
+                elif rest.type == "else" or rest.type == "suite":
+                    self.emit("else {")
+                    self.push()
+                    self.visit(rest.children[0] if hasattr(rest, 'children') and rest.children else rest)
+                    self.pop()
+                    self.emit("}")
+    
+    def visit_else(self, node):
+        # else clause
+        self.emit("else {")
+        self.push()
+        if node.children:
+            self.visit(node.children[0])
+        self.pop()
+        self.emit("}")
+
+    def visit_while(self, node):
+        # node structure:
+        # children[0]: condition expression
+        # children[1]: suite (while-body)
+        
+        condition = self.visit(node.children[0])
+        self.emit(f"while ({condition}) {{")
+        self.push()
+        self.visit(node.children[1])  # while-body
+        self.pop()
+        self.emit("}")
+
+    def visit_for(self, node):
+    # node structure:
+    # children[0]: target variable (identifier)
+    # children[1]: iterable expression
+    # children[2]: suite (for-body)
+    
+        target = self.visit(node.children[0])
+        iterable = self.visit(node.children[1])
+        
+        # Simple range-based for loop
+        self.emit(f"for (auto {target} : {iterable}) {{")
+        self.push()
+        self.visit(node.children[2])  # for-body
+        self.pop()
+        self.emit("}")
+
     # Sentences
     def visit_assignment(self, node):
         name = node.value
@@ -104,6 +197,12 @@ class CppVisitor(Visitor):
             self.emit(f"return {expr};")
         else:
             self.emit("return {};") 
+    
+    def visit_break(self, node):
+        self.emit("break;")
+
+    def visit_continue(self, node):
+        self.emit("continue;")
 
     def visit_expression_stmt(self, node):
         expr_node = node.children[0] if node.children else None
@@ -150,6 +249,15 @@ class CppVisitor(Visitor):
         right = self.visit(node.children[1])
         op = node.value
         return f"({left} {op} {right})"
+
+    def visit_augmented_assignment(self, node):
+    # node.value: operator (+=, -=, *=, etc.)
+    # children[0]: target (identifier)
+    # children[1]: expression
+        target = self.visit(node.children[0])
+        expr = self.visit(node.children[1])
+        op = node.value
+        self.emit(f"{target} {op} {expr};")
 
     def visit_call(self, node):
         # node.value: 
