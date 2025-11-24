@@ -15,8 +15,9 @@ def fib(n):
         return 1
     else:
         return fib(n-1) + fib(n-2)
-print (fib(5))
+    print("Hola, dentro de fib()")
 
+print (fib(5))
 
 a = 4
 print(a)
@@ -44,3 +45,7 @@ while a < b:
     b = "hola"
     b=c-2
 print("Si printeo mis probabilidades de graduarme suben :)")
+
+queene = True
+jose = 789.298781
+andrey = "ECCI"
