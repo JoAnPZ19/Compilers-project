@@ -155,35 +155,23 @@ class Analyzer:
             t = ANY
         return self.annotate(node, t)
 
-    # --- Assignment ---
+        # --- Assignment ---
     def visit_assignment(self, node):
         name = node.value
         expr = node.children[0] if node.children else None
+
         t_expr = self.visit(expr)
         if t_expr is None:
             t_expr = ANY
-        # declare or update
+
         prev = self.symtab.lookup(name)
         if prev is None:
             self.symtab.declare(name, t_expr)
         else:
-            # try to unify: if prev is ANY, set to expr; if same keep; if numeric mismatch promote to DOUBLE
-            if prev.equals(ANY):
-                self.symtab.update(name, t_expr)
-            elif prev.is_numeric() and t_expr.is_numeric():
-                # if either DOUBLE -> DOUBLE
-                if prev.equals(DOUBLE) or t_expr.equals(DOUBLE):
-                    self.symtab.update(name, DOUBLE)
-                else:
-                    self.symtab.update(name, INT)
-            else:
-                # incompatible -> keep prev but warn
-                if not prev.equals(t_expr):
-                    # best-effort: set to ANY
-                    self.symtab.update(name, ANY)
-                    self.errors.append(f"Type conflict for variable '{name}': {prev} vs {t_expr}")
-        # annotate assignment node
+            self.symtab.update(name, t_expr)
+
         return self.annotate(node, self.symtab.lookup(name))
+
 
     # --- Binary ops ---
     def visit_binary_op(self, node):

@@ -1,14 +1,43 @@
-
+#!/usr/bin/env python3
 import sys
-import argparse
 import os
 import Parser
 
-# Helper: Node-like detector
+
+# ======================================================
+# === Symbol Table =====================================
+# ======================================================
+
+class SymbolInfo:
+    def __init__(self, name, sym_type="any", declared_at=None):
+        self.name = name
+        self.type = sym_type
+        self.declared_at = declared_at
+
+class SymbolTable:
+    def __init__(self, parent=None):
+        self.symbols = {}
+        self.parent = parent
+
+    def define(self, name, info):
+        self.symbols[name] = info
+
+    def lookup(self, name):
+        scope = self
+        while scope is not None:
+            if name in scope.symbols:
+                return scope.symbols[name]
+            scope = scope.parent
+        return None
+
+
+# ======================================================
+# === Visitor Base =====================================
+# ======================================================
+
 def is_node(x):
     return hasattr(x, "type") and hasattr(x, "children")
 
-# Visitor 
 class Visitor:
     def visit(self, node):
         if node is None:
@@ -17,33 +46,83 @@ class Visitor:
             return ""
         if not is_node(node):
             return ""
-        method_name = f"visit_{node.type}"
-        visitor = getattr(self, method_name, self.generic_visit)
-        return visitor(node)
+        fn = getattr(self, f"visit_{node.type}", self.generic_visit)
+        return fn(node)
 
     def generic_visit(self, node):
-        out = ""
-        for child in getattr(node, "children", []) or []:
-            out_child = self.visit(child)
-            out += out_child if out_child is not None else ""
-        return out
+        result = ""
+        for c in node.children:
+            result += self.visit(c) or ""
+        return result
 
-# Visitor -> C++  std::any
+
+# ======================================================
+# === Primer Pase: Construcción de tabla de símbolos ====
+# ======================================================
+
+class SymbolTableVisitor(Visitor):
+    def __init__(self):
+        self.global_scope = SymbolTable(parent=None)
+        self.current_scope = self.global_scope
+        self.errors = []
+
+    def enter_scope(self):
+        new = SymbolTable(parent=self.current_scope)
+        self.current_scope = new
+        return new
+
+    def exit_scope(self):
+        self.current_scope = self.current_scope.parent
+
+    def visit_module(self, node):
+        for child in node.children:
+            self.visit(child)
+        return self.global_scope
+
+    def visit_function_def(self, node):
+        name = node.value
+        self.global_scope.define(name, SymbolInfo(name, "function"))
+
+        self.enter_scope()
+
+        params_node = node.children[0]
+        for p in params_node.children:
+            self.current_scope.define(p.value, SymbolInfo(p.value, "param"))
+
+        suite = node.children[1]
+        self.visit(suite)
+
+        self.exit_scope()
+
+    def visit_assignment(self, node):
+        var = node.value
+        self.current_scope.define(var, SymbolInfo(var, "any"))
+        self.visit(node.children[0])
+
+    def visit_identifier(self, node):
+        name = node.value
+        if not self.current_scope.lookup(name):
+            self.errors.append(
+                f"Variable '{name}' usada sin definir (posible error)"
+            )
+        return name
+
+
+# ======================================================
+# === Segundo pase: Transpilación C++ ===================
+# ======================================================
 
 class CppVisitor(Visitor):
-    def __init__(self):
+    def __init__(self, symbol_table):
+        self.symbol_table = symbol_table
         self.lines = []
         self.indent_level = 0
 
-    # utilidades
     def emit(self, text=""):
         self.lines.append("    " * self.indent_level + text)
 
-    def push(self):
-        self.indent_level += 1
-
-    def pop(self):
-        self.indent_level = max(0, self.indent_level - 1)
+    def push(self): self.indent_level += 1
+    def pop(self): self.indent_level -= 1
 
     def get_code(self):
         header = [
@@ -52,336 +131,106 @@ class CppVisitor(Visitor):
             "#include <vector>",
             "#include <map>",
             "#include <set>",
-            "#include <tuple>",
             "using namespace std;",
             ""
         ]
         return "\n".join(header + self.lines)
 
-    # main nodes
+    # === nodos ===
+
     def visit_module(self, node):
-         # read functions and declarations
-        for child in node.children:
-            self.visit(child)
+        for c in node.children:
+            self.visit(c)
         return self.get_code()
 
     def visit_function_def(self, node):
-        # node.value: name; node.children: [parameters_node, suite_node]
         name = node.value
-        params_node = node.children[0] if len(node.children) > 0 else None
-        suite_node = node.children[1] if len(node.children) > 1 else None
+        params_node = node.children[0]
+        suite_node = node.children[1]
 
-        params = []
-        if params_node and is_node(params_node):
-            for p in params_node.children:
-                if is_node(p):
-                    params.append(p.value)
+        params = [f"std::any {p.value}" for p in params_node.children]
+        cpp_params = ", ".join(params)
 
-        cpp_params = ", ".join([f"std::any {p}" for p in params])
         self.emit(f"std::any {name}({cpp_params}) {{")
         self.push()
-        # Body
-        if suite_node:
-            self.visit(suite_node)
+        self.visit(suite_node)
         self.pop()
         self.emit("}\n")
 
     def visit_suite(self, node):
-        for child in node.children:
-            if isinstance(child, str):
+        for c in node.children:
+            if isinstance(c, str):
                 continue
-            self.visit(child)
+            self.visit(c)
 
-    def visit_if(self, node):
-        # node estructure
-        # children[0]: condition expression
-        # children[1]: suit for if
-        # children[2]: elif or else (optional)
-        condition = self.visit(node.children[0])
-        self.emit(f"if ({condition}) {{")
-        self.push()
-        self.visit(node.children[1])  # if-body
-        self.pop()
-        self.emit("}")
-        
-        # Handle elif/else
-        if len(node.children) > 2:
-            rest = node.children[2]
-            if is_node(rest):
-                if rest.type == "elif":
-                    # Handle elif chain
-                    self.visit_elif(rest)
-                elif rest.type == "else":
-                    # Handle else
-                    self.emit("else {")
-                    self.push()
-                    self.visit(rest.children[0] if rest.children else rest)
-                    self.pop()
-                    self.emit("}")
-                elif rest.type == "suite":
-                    # Direct else suite
-                    self.emit("else {")
-                    self.push()
-                    self.visit(rest)
-                    self.pop()
-                    self.emit("}")
-    
-    def visit_elif(self, node):
-        #elif node, like else if in C++
-        condition = self.visit(node.children[0])
-        self.emit(f"else if ({condition}) {{")
-        self.push()
-        self.visit(node.children[1])  # elif-body
-        self.pop()
-        self.emit("}")
-        
-        # Check for more elif or else
-        if len(node.children) > 2:
-            rest = node.children[2]
-            if is_node(rest):
-                if rest.type == "elif":
-                    self.visit_elif(rest)
-                elif rest.type == "else" or rest.type == "suite":
-                    self.emit("else {")
-                    self.push()
-                    self.visit(rest.children[0] if hasattr(rest, 'children') and rest.children else rest)
-                    self.pop()
-                    self.emit("}")
-    
-    def visit_else(self, node):
-        # else clause
-        self.emit("else {")
-        self.push()
-        if node.children:
-            self.visit(node.children[0])
-        self.pop()
-        self.emit("}")
-
-    def visit_while(self, node):
-        # node structure:
-        # children[0]: condition expression
-        # children[1]: suite (while-body)
-        
-        condition = self.visit(node.children[0])
-        self.emit(f"while ({condition}) {{")
-        self.push()
-        self.visit(node.children[1])  # while-body
-        self.pop()
-        self.emit("}")
-
-    def visit_for(self, node):
-    # node structure:
-    # children[0]: target variable (identifier)
-    # children[1]: iterable expression
-    # children[2]: suite (for-body)
-    
-        target = self.visit(node.children[0])
-        iterable = self.visit(node.children[1])
-        
-        # Simple range-based for loop
-        self.emit(f"for (auto {target} : {iterable}) {{")
-        self.push()
-        self.visit(node.children[2])  # for-body
-        self.pop()
-        self.emit("}")
-
-    # Sentences
     def visit_assignment(self, node):
         name = node.value
         expr = self.visit(node.children[0])
         self.emit(f"std::any {name} = {expr};")
 
     def visit_return(self, node):
-        if node.children:
-            expr = self.visit(node.children[0])
-            self.emit(f"return {expr};")
-        else:
-            self.emit("return {};") 
-    
-    def visit_break(self, node):
-        self.emit("break;")
-
-    def visit_continue(self, node):
-        self.emit("continue;")
+        expr = self.visit(node.children[0])
+        self.emit(f"return {expr};")
 
     def visit_expression_stmt(self, node):
-        expr_node = node.children[0] if node.children else None
-        if expr_node:
-            if is_node(expr_node) and expr_node.type == "call":
-                s = self.visit(expr_node)
-                if s.strip():
-                    if "std::cout" in s or s.endswith(";"):
-                        if not any(line.strip().endswith(";") for line in [s.strip()]):
-                            self.emit(s)
-                        else:
-                            self.emit(s if s.endswith(";") else s + ";")
-                    else:
-                        self.emit(f"{s};")
-            else:
-                expr = self.visit(expr_node)
-                if expr:
-                    self.emit(f"{expr};")
+        code = self.visit(node.children[0])
+        if code.strip():
+            self.emit(code + ";")
 
-    # Expressions: returns string as C++
     def visit_binary_op(self, node):
-        # children[0], children[1] expressions
         left = self.visit(node.children[0])
         right = self.visit(node.children[1])
         op = node.value
         return f"std::any_cast<double>({left}) {op} std::any_cast<double>({right})"
 
-    def visit_unary_op(self, node):
-        # node.value es '-' o 'not'
-        operand = self.visit(node.children[0])
-        op = node.value
-        if op == 'not':
-            return f"!({operand})"
-        return f"{op}{operand}"
-
-    def visit_comparison(self, node):
-        left = self.visit(node.children[0])
-        right = self.visit(node.children[1])
-        op = node.value
-        return f"({left} {op} {right})"
-
-    def visit_boolean_op(self, node):
-        left = self.visit(node.children[0])
-        right = self.visit(node.children[1])
-        op = node.value
-        return f"({left} {op} {right})"
-
-    def visit_augmented_assignment(self, node):
-    # node.value: operator (+=, -=, *=, etc.)
-    # children[0]: target (identifier)
-    # children[1]: expression
-        target = self.visit(node.children[0])
-        expr = self.visit(node.children[1])
-        op = node.value
-        self.emit(f"{target} {op} {expr};")
-
-    def visit_call(self, node):
-        # node.value: 
-        func_name = node.value
-        args = node.children or []
-        arg_exprs = [self.visit(a) for a in args]
-
-        if func_name == "print":
-            # join con " << " y convert args a streamables
-            parts = []
-            for ae in arg_exprs:
-                parts.append(f"{ae}")
-                parts.append(' << " " << ')
-            # remove last added spacer
-            if parts:
-                # compose: std::cout << arg1 << " " << arg2 << std::endl;
-                join_expr = " << ".join([p for p in arg_exprs])
-                self.emit(f"std::cout << {join_expr} << std::endl;")
-                return ""  # ya emitimos la sentencia
-            else:
-                self.emit('std::cout << std::endl;')
-                return ""
-
-        # Normal Calls: return expression
-        return f"{func_name}({', '.join(arg_exprs)})"
-
-    def visit_subscript(self, node):
-        # [obj, index]
-        obj = self.visit(node.children[0])
-        idx = self.visit(node.children[1])
-        return f"{obj}[{idx}]"
-
     def visit_identifier(self, node):
         return node.value
 
     def visit_number(self, node):
-        # numbers in parser  int or float (node.value)
         return str(node.value)
 
     def visit_string(self, node):
-        # node.value proviene de lexer con comillas incluidas "hola" o 'hola'
-        # asegurarnos que esté con comillas dobles para C++
         v = node.value
-        if isinstance(v, str):
-            if v.startswith('"') and v.endswith('"'):
-                return v
-            if v.startswith("'") and v.endswith("'"):
-                inner = v[1:-1]
-                return f"\"{inner}\""
-            return f"\"{v}\""
-        return str(v)
+        if v.startswith("'"):
+            return '"' + v[1:-1] + '"'
+        return v
 
-    def visit_boolean(self, node):
-        val = str(node.value)
-        if val.lower() in ("true", "1"):
-            return "true"
-        return "false"
 
-    def visit_pair(self, node):
-        k = self.visit(node.children[0])
-        v = self.visit(node.children[1])
-        return f"make_pair({k}, {v})"
-
-    def visit_list(self, node):
-        items = ", ".join(self.visit(c) for c in node.children)
-        return f"vector<any>{{{items}}}"
-
-    def visit_tuple(self, node):
-        items = ", ".join(self.visit(c) for c in node.children)
-        return f"make_tuple({items})"
-
-    def visit_dict(self, node):
-        # return expression constructing a std::map<any, any>
-        items = []
-        for c in node.children:
-            if is_node(c) and c.type == "pair":
-                items.append(f"{{{self.visit(c.children[0])}, {self.visit(c.children[1])}}}")
-        inner = ", ".join(items)
-        return f"map<any, any>{{{inner}}}"
-
-    def visit_set(self, node):
-        items = ", ".join(self.visit(c) for c in node.children)
-        return f"set<any>{{{items}}}"
-
-    def visit_parameter(self, node):
-        # parameter node.value is name; used when building function signature
-        return node.value
-
-    def visit_pass(self, node):
-        # no-op
-        return ""
+# ======================================================
+# === Main: parser → symbols → transpiler ==============
+# ======================================================
 
 def main():
-    parser_cli = argparse.ArgumentParser(description="Visitor that generates C++ from AST produced by your Parser")
-    parser_cli.add_argument("input", help="Python source file (parsed by your Parser)")
-    parser_cli.add_argument("-o", "--output", help="Optional output .cpp file", default=None)
-    args = parser_cli.parse_args()
+    if len(sys.argv) < 2:
+        print("Uso: python Visitor.py archivo.py")
+        return
 
-    fname = args.input
-    if not os.path.exists(fname):
-        print("File not found:", fname)
-        sys.exit(1)
+    filename = sys.argv[1]
+    source = open(filename, "r", encoding="utf-8").read()
 
-    src = open(fname, "r", encoding="utf-8").read()
+    parser = Parser.Parser(debug=False)
+    parser.build()
+    ast = parser.parse(source)
 
-    # construir parser y parsear (usar tu Parser class)
-    p = Parser.Parser(debug=False)
-    p.build()
-    ast = p.parse(src)
+    # Pase 1: tabla de símbolos
+    sym_builder = SymbolTableVisitor()
+    global_scope = sym_builder.visit(ast)
 
-    # si hubo errores, imprimirlos y salir (pero aún así intentamos generar)
-    if p.errors:
-        print("\n===PARSE ERRORS ===")
-        for e in p.errors:
-            print(e)
-        # no return: try to figure with partial AST 
+    if sym_builder.errors:
+        print("\n=== Errores detectados en tabla de símbolos ===")
+        for e in sym_builder.errors:
+            print(" -", e)
 
-    visitor = CppVisitor()
-    cpp_code = visitor.visit(ast)
+    # Pase 2: generar C++
+    cpp_gen = CppVisitor(global_scope)
+    cpp_code = cpp_gen.visit(ast)
 
-    base = os.path.splitext(fname)[0]
-    out_name = f"{base}.cpp"
-    with open(out_name, "w", encoding="utf-8") as out:
-        out.write(cpp_code)
+    out_file = filename.replace(".py", ".cpp")
+    with open(out_file, "w", encoding="utf-8") as f:
+        f.write(cpp_code)
+
+    print(f"\n✅ Código C++ generado en: {out_file}")
+
 
 if __name__ == "__main__":
     main()
