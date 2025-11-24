@@ -34,8 +34,10 @@ class Visitor:
 class CppVisitor(Visitor):
     def __init__(self):
         self.lines = []
+        self.main_lines = [] 
         self.indent_level = 0
-
+        self.top_level_statements = []
+        self.inside_function = False
     # utilidades
     def emit(self, text=""):
         self.lines.append("    " * self.indent_level + text)
@@ -111,13 +113,46 @@ class CppVisitor(Visitor):
 
     # main nodes
     def visit_module(self, node):
-         # read functions and declarations
+
         for child in node.children:
-            self.visit(child)
-        return self.get_code()
+
+            if isinstance(child, str):
+                if child.strip() == "":
+                    continue
+
+            if is_node(child) and child.type == "function_def":
+                self.visit(child)
+
+            else:
+                self.top_level_statements.append(child)
+
+        return self.generate_full_output()
+
+
+    def generate_full_output(self):
+        includes = (
+            "#include <any>\n"
+            "#include <iostream>\n"
+            "#include <string>\n"
+            "using namespace std;\n\n"
+        )
+
+        # funciones
+        body = "\n".join(self.lines)
+
+        # generar main
+        main = "int main() {\n"
+
+        for stmt in self.top_level_statements:
+            line = self.visit(stmt)
+            if line and line.strip():
+                main += f"    {line};\n"
+
+        main += "    return 0;\n}\n"
+
+        return includes + body + "\n" + main
 
     def visit_function_def(self, node):
-        # node.value: name; node.children: [parameters_node, suite_node]
         name = node.value
         params_node = node.children[0] if len(node.children) > 0 else None
         suite_node = node.children[1] if len(node.children) > 1 else None
@@ -128,29 +163,33 @@ class CppVisitor(Visitor):
                 if is_node(p):
                     params.append(p.value)
 
-        # Try to pick types from Analyzer annotations if present
-        # If node has inferred_type of func, use that
         func_type = getattr(node, "inferred_type", None)
         ret_type_str = "auto"
         cpp_params = []
+
         if func_type and func_type.name == 'func':
-            # func_type.params: [param1_type, param2_type, ..., return_type]
             param_types = func_type.params[:-1]
-            ret_type = func_type.params[-1] if func_type.params else Analyzer.ANY
+            ret_type = func_type.params[-1]
             ret_type_str = self.cpp_type_name(ret_type)
+
             for pname, ptype in zip(params, param_types):
                 cpp_params.append(f"{self.cpp_type_name(ptype)} {pname}")
         else:
-            # fallback: all std::any
             cpp_params = [f"std::any {p}" for p in params]
+
+        self.inside_function = True
 
         self.emit(f"{ret_type_str} {name}({', '.join(cpp_params)}) {{")
         self.push()
-        # Body
+
         if suite_node:
             self.visit(suite_node)
+
         self.pop()
         self.emit("}\n")
+
+        self.inside_function = False
+
   
     def visit_suite(self, node):
         for child in node.children:
@@ -284,24 +323,22 @@ class CppVisitor(Visitor):
 
     def visit_continue(self, node):
         self.emit("continue;")
-
+            
     def visit_expression_stmt(self, node):
         expr_node = node.children[0] if node.children else None
-        if expr_node:
-            if is_node(expr_node) and expr_node.type == "call":
-                s = self.visit(expr_node)
-                if s.strip():
-                    if "std::cout" in s or s.endswith(";"):
-                        if not any(line.strip().endswith(";") for line in [s.strip()]):
-                            self.emit(s)
-                        else:
-                            self.emit(s if s.endswith(";") else s + ";")
-                    else:
-                        self.emit(f"{s};")
-            else:
-                expr = self.visit(expr_node)
-                if expr:
-                    self.emit(f"{expr};")
+        if not expr_node:
+            return ""
+
+        expr_cpp = self.visit(expr_node)
+
+        if self.inside_function:
+            if expr_cpp.strip():
+                self.emit(f"{expr_cpp};")
+            return ""
+
+        else:
+            return expr_cpp
+
 
     # Expressions: returns string as C++
     def visit_binary_op(self, node):
@@ -341,29 +378,23 @@ class CppVisitor(Visitor):
         self.emit(f"{target} {op} {expr};")
 
     def visit_call(self, node):
-        # node.value: 
         func_name = node.value
         args = node.children or []
         arg_exprs = [self.visit(a) for a in args]
 
         if func_name == "print":
-            # join con " << " y convert args a streamables
-            parts = []
-            for ae in arg_exprs:
-                parts.append(f"{ae}")
-                parts.append(' << " " << ')
-            # remove last added spacer
-            if parts:
-                # compose: std::cout << arg1 << " " << arg2 << std::endl;
-                join_expr = " << ".join([p for p in arg_exprs])
+            join_expr = " << ".join(arg_exprs) if arg_exprs else '""'
+
+            # Si estamos dentro de una función, emitimos
+            if self.inside_function:
                 self.emit(f"std::cout << {join_expr} << std::endl;")
-                return ""  # ya emitimos la sentencia
-            else:
-                self.emit('std::cout << std::endl;')
                 return ""
 
-        # Normal Calls: return expression
+            # Si está en top-level devolvemos el código (será puesto dentro del main)
+            return f"std::cout << {join_expr} << std::endl"
+
         return f"{func_name}({', '.join(arg_exprs)})"
+
 
     def visit_subscript(self, node):
         # [obj, index]
@@ -377,19 +408,26 @@ class CppVisitor(Visitor):
     def visit_number(self, node):
         # numbers in parser  int or float (node.value)
         return str(node.value)
-
+    
     def visit_string(self, node):
-        # node.value proviene de lexer con comillas incluidas "hola" o 'hola'
-        # asegurarnos que esté con comillas dobles para C++
-        v = node.value
-        if isinstance(v, str):
-            if v.startswith('"') and v.endswith('"'):
-                return v
-            if v.startswith("'") and v.endswith("'"):
-                inner = v[1:-1]
-                return f"\"{inner}\""
-            return f"\"{v}\""
-        return str(v)
+        raw = node.value 
+
+        try:
+            # Interpret Python literal (handles escapes, unicode, etc.)
+            text = ast.literal_eval(raw)
+        except:
+            # Fallback: remove only outer quotes
+            text = raw[1:-1]
+
+        # Escape for C++
+        escaped = (
+            text.replace('\\', '\\\\')
+                .replace('"', '\\"')
+                .replace('\n', '\\n')
+                .replace('\t', '\\t')
+        )
+
+        return f"\"{escaped}\""
 
     def visit_boolean(self, node):
         val = str(node.value)

@@ -2,6 +2,7 @@
 # Nuevo archivo: implementa tabla de símbolos y un inferidor simple.
 
 from collections import deque
+import ast
 
 # --- Tipos simples ---
 class Type:
@@ -138,9 +139,19 @@ class Analyzer:
             return self.annotate(node, INT)
         else:
             return self.annotate(node, DOUBLE)
+            
 
     def visit_string(self, node):
+
+        raw = node.value
+        try:
+            literal = ast.literal_eval(raw)
+        except Exception:
+            literal = raw.strip("'\"")
+
+        node.literal = literal
         return self.annotate(node, STRING)
+
 
     def visit_boolean(self, node):
         return self.annotate(node, BOOL)
@@ -155,7 +166,7 @@ class Analyzer:
             t = ANY
         return self.annotate(node, t)
 
-        # --- Assignment ---
+            # --- Assignment ---
     def visit_assignment(self, node):
         name = node.value
         expr = node.children[0] if node.children else None
@@ -165,35 +176,54 @@ class Analyzer:
             t_expr = ANY
 
         prev = self.symtab.lookup(name)
+
+        # Primera vez → declarar
         if prev is None:
             self.symtab.declare(name, t_expr)
-        else:
-            self.symtab.update(name, t_expr)
+            return self.annotate(node, t_expr)
 
-        return self.annotate(node, self.symtab.lookup(name))
+        # Actualización dinámica → Python style (último valor gana)
+        self.symtab.update(name, t_expr)
+
+        return self.annotate(node, t_expr)
 
 
-    # --- Binary ops ---
+
+        # --- Binary ops ---
     def visit_binary_op(self, node):
         left = node.children[0]
         right = node.children[1]
-        lt = self.visit(left)
-        rt = self.visit(right)
-        if lt is None: lt = ANY
-        if rt is None: rt = ANY
-        # numeric ops: + - * / pow etc. -> numeric promotion
-        if lt.is_numeric() and rt.is_numeric():
-            # DOUBLE if either DOUBLE
-            if lt.equals(DOUBLE) or rt.equals(DOUBLE):
-                res = DOUBLE
+
+        t_left = self.visit(left) or ANY
+        t_right = self.visit(right) or ANY
+        op = node.value
+
+        # ANY —> propagación
+        if t_left.equals(ANY) or t_right.equals(ANY):
+            return self.annotate(node, ANY)
+
+        # STRING + STRING
+        if t_left.equals(STRING) and t_right.equals(STRING):
+            if op == "+":
+                return self.annotate(node, STRING)
             else:
-                res = INT
-        elif lt.equals(STRING) or rt.equals(STRING):
-            # string concatenation?
-            res = STRING
-        else:
-            res = ANY
-        return self.annotate(node, res)
+                self.errors.append(f"Incompatible operator '{op}' for strings")
+                return self.annotate(node, ANY)
+
+        # STRING + ANY → forzar STRING si es '+'
+        if op == "+" and (t_left.equals(STRING) or t_right.equals(STRING)):
+            return self.annotate(node, STRING)
+
+        # Numéricos
+        if t_left.is_numeric() and t_right.is_numeric():
+            if t_left.equals(DOUBLE) or t_right.equals(DOUBLE):
+                return self.annotate(node, DOUBLE)
+            else:
+                return self.annotate(node, INT)
+
+        # Todo lo demás
+        return self.annotate(node, ANY)
+
 
     def visit_unary_op(self, node):
         operand = node.children[0]
@@ -220,21 +250,30 @@ class Analyzer:
 
     # --- Calls ---
     def visit_call(self, node):
-        # First visit args
-        arg_types = []
-        for a in node.children or []:
-            arg_types.append(self.visit(a) or ANY)
-        # Simple builtins:
-        if node.value == "print":
-            return self.annotate(node, NONE)
-        # If function declared in table?
-        ftype = self.symtab.lookup(node.value)
-        if ftype and ftype.name == 'func':
-            # function type: params..., return in params[-1]
-            # here we return the return type if available
-            ret = ftype.params[-1] if ftype.params else ANY
-            return self.annotate(node, ret)
-        # Unknown function: ANY
+        arg_types = [self.visit(a) for a in (node.children or [])]
+
+        if isinstance(node.value, str):
+            fn = node.value.lower()
+
+            if fn == "print":
+                return self.annotate(node, NONE)
+
+            if fn == "str":
+                return self.annotate(node, STRING)
+
+            if fn == "int":
+                return self.annotate(node, INT)
+
+            if fn == "float":
+                return self.annotate(node, DOUBLE)
+
+        sym = None
+        if isinstance(node.value, str):
+            sym = self.symtab.lookup(node.value)
+
+        if sym is not None and hasattr(sym, "return_type"):
+            return self.annotate(node, sym.return_type)
+
         return self.annotate(node, ANY)
 
     # --- Function defs ---
