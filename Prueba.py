@@ -15,8 +15,6 @@ def fib(n):
         return 1
     else:
         return fib(n-1) + fib(n-2)
-    print("Hola, dentro de fib()")
-
 print (fib(5))
 
 
