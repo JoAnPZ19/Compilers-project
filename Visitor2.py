@@ -5,11 +5,9 @@ import ast
 import Parser
 import Analyzer
 
-# Helper: Node-like detector
 def is_node(x):
     return hasattr(x, "type") and hasattr(x, "children")
 
-# Visitor 
 class Visitor:
     def visit(self, node):
         if node is None:
@@ -29,25 +27,16 @@ class Visitor:
             out += out_child if out_child is not None else ""
         return out
 
-# Visitor -> C++  std::any
-
 class CppVisitor(Visitor):
     def __init__(self, symtab=None):
-        # lines for function bodies and top-level function definitions
         self.lines = []
-        # symbol table from analyzer (used to get inferred types)
         self.symtab = symtab
         self.indent_level = 0
-        # collect top-level nodes to put inside main
         self.top_level_statements = []
-        # are we currently generating inside a function?
         self.inside_function = False
-        # track declared variables in main (to avoid redeclaring)
         self.declared_main = set()
-        # stack to track declared variables per function
         self.func_declared_stack = []
 
-    # utilidades para emitir dentro de funciones (self.lines)
     def emit(self, text=""):
         self.lines.append("    " * self.indent_level + text)
 
@@ -58,14 +47,13 @@ class CppVisitor(Visitor):
         self.indent_level = max(0, self.indent_level - 1)
 
     def cpp_type_name(self, t):
-        # t puede ser None, una instancia Analyzer.Type o un string
         if t is None:
             return "std::any"
         if isinstance(t, str):
             name = t
             if name == 'int':
                 return "int"
-            if name == 'float':
+            if name in ('float', 'double'):
                 return "double"
             if name == 'string':
                 return "std::string"
@@ -75,10 +63,9 @@ class CppVisitor(Visitor):
                 return "void"
             return "std::any"
 
-        # Analyzer.Type objects
         if t.name == 'int':
             return "int"
-        if t.name == 'float':
+        if t.name in ('float', 'double'):
             return "double"
         if t.name == 'string':
             return "std::string"
@@ -87,35 +74,49 @@ class CppVisitor(Visitor):
         if t.name == 'none':
             return "void"
         if t.name == 'list' and t.params:
-            return f"std::vector<{self.cpp_type_name(t.params[0])}>"
+            elem_type = self.cpp_type_name(t.params[0])
+            return f"std::vector<{elem_type}>"
         if t.name == 'dict' and len(t.params) >= 2:
-            return f"std::map<{self.cpp_type_name(t.params[0])},{self.cpp_type_name(t.params[1])}>"
+            k_type = self.cpp_type_name(t.params[0])
+            v_type = self.cpp_type_name(t.params[1])
+            return f"std::map<{k_type},{v_type}>"
+        if t.name == 'tuple' and t.params:
+            types = ", ".join(self.cpp_type_name(p) for p in t.params)
+            return f"std::tuple<{types}>"
         if t.name == 'func':
             return "auto"
         return "std::any"
 
-    # === DEBUG: Print AST with inferred types ===
-    def dump_ast(self, node, indent=0):
-        pad = "  " * indent
-        inferred = getattr(node, "inferred_type", None)
-        print(f"{pad}{node.type}  value={getattr(node,'value',None)}  type={inferred}")
-        for child in getattr(node, "children", []) or []:
-            if is_node(child):
-                self.dump_ast(child, indent + 1)
+    def get_expr_type(self, node):
+        """Get the inferred type of an expression node"""
+        return getattr(node, "inferred_type", None)
 
-    # main nodes
+    def needs_any_cast(self, node, target_type=None):
+        """Check if we need any_cast for this expression"""
+        expr_type = self.get_expr_type(node)
+        if expr_type is None or expr_type.name == 'any':
+            return True
+        if target_type and not expr_type.equals(target_type):
+            return True
+        return False
+
+    def wrap_any_cast(self, expr, node, cpp_type="double"):
+        """Wrap expression with any_cast if needed"""
+        expr_type = self.get_expr_type(node)
+        if expr_type and expr_type.name != 'any':
+            # Already has concrete type, no cast needed
+            return expr
+        return f"std::any_cast<{cpp_type}>({expr})"
+
     def visit_module(self, node):
         for child in node.children:
-            # ignore plain newline strings
             if isinstance(child, str):
                 if child.strip() == "":
                     continue
 
             if is_node(child) and child.type == "function_def":
-                # visit functions now (they append to self.lines via emit)
                 self.visit(child)
             else:
-                # keep for main generation
                 self.top_level_statements.append(child)
 
         return self.generate_full_output()
@@ -128,27 +129,33 @@ class CppVisitor(Visitor):
             "#include <vector>\n"
             "#include <map>\n"
             "#include <set>\n"
+            "#include <tuple>\n"
             "using namespace std;\n\n"
         )
 
-        # funciones y demás emitidas en self.lines
+        # Add str() helper function
+        str_helper = (
+            "// Helper function for str() conversion\n"
+            "template<typename T>\n"
+            "std::string str(T value) {\n"
+            "    return std::to_string(value);\n"
+            "}\n\n"
+        )
+
         functions_cpp = "\n".join(self.lines)
 
-        # generar main con las lineas que las visitas retornen
-        main = "int main() {\n"
+        main = "int main(int argc, char *argv[]) {\n"
         for stmt in self.top_level_statements:
             line = self.visit(stmt)
             if line and line.strip():
-                # si la línea ya contiene ; (p.ej. print code), no agregar;
                 if line.strip().endswith(";"):
                     main += f"    {line}\n"
                 else:
                     main += f"    {line};\n"
         main += "    return 0;\n}\n"
 
-        return includes + functions_cpp + "\n\n" + main
+        return includes + str_helper + functions_cpp + "\n\n" + main
 
-    # --- Functions ---
     def visit_function_def(self, node):
         name = node.value
         params_node = node.children[0] if len(node.children) > 0 else None
@@ -161,12 +168,11 @@ class CppVisitor(Visitor):
                     params.append(p.value)
 
         func_type = getattr(node, "inferred_type", None)
-        ret_type_str = "auto"
+        ret_type_str = "std::any"
         cpp_params = []
 
         if func_type and func_type.name == 'func':
             param_types = func_type.params[:-1]
-            # if function has fewer param types than params, fallback to any
             for idx, pname in enumerate(params):
                 ptype = param_types[idx] if idx < len(param_types) else None
                 cpp_params.append(f"{self.cpp_type_name(ptype)} {pname}")
@@ -175,7 +181,6 @@ class CppVisitor(Visitor):
         else:
             cpp_params = [f"std::any {p}" for p in params]
 
-        # begin function: set inside flag and new declared set for this function
         self.inside_function = True
         self.func_declared_stack.append(set())
 
@@ -188,7 +193,6 @@ class CppVisitor(Visitor):
         self.pop()
         self.emit("}\n")
 
-        # leave function
         self.func_declared_stack.pop()
         self.inside_function = False
 
@@ -198,7 +202,6 @@ class CppVisitor(Visitor):
                 continue
             self.visit(child)
 
-    # control structures unchanged (they call visit on bodies and will use emit inside)
     def visit_if(self, node):
         condition = self.visit(node.children[0])
         self.emit(f"if ({condition}) {{")
@@ -206,17 +209,19 @@ class CppVisitor(Visitor):
         self.visit(node.children[1])
         self.pop()
         self.emit("}")
+        
         if len(node.children) > 2:
-            rest = node.children[2]
-            if is_node(rest):
-                if rest.type == "elif":
-                    self.visit_elif(rest)
-                elif rest.type in ("else", "suite"):
-                    self.emit("else {")
-                    self.push()
-                    self.visit(rest.children[0] if rest.children else rest)
-                    self.pop()
-                    self.emit("}")
+            rest = node.children[2:]
+            for item in rest:
+                if is_node(item):
+                    if item.type == "elif":
+                        self.visit_elif(item)
+                    elif item.type in ("else", "suite"):
+                        self.emit("else {")
+                        self.push()
+                        self.visit(item.children[0] if item.children else item)
+                        self.pop()
+                        self.emit("}")
 
     def visit_elif(self, node):
         condition = self.visit(node.children[0])
@@ -225,17 +230,6 @@ class CppVisitor(Visitor):
         self.visit(node.children[1])
         self.pop()
         self.emit("}")
-        if len(node.children) > 2:
-            rest = node.children[2]
-            if is_node(rest):
-                if rest.type == "elif":
-                    self.visit_elif(rest)
-                elif rest.type in ("else", "suite"):
-                    self.emit("else {")
-                    self.push()
-                    self.visit(rest.children[0] if rest.children else rest)
-                    self.pop()
-                    self.emit("}")
 
     def visit_else(self, node):
         self.emit("else {")
@@ -260,7 +254,7 @@ class CppVisitor(Visitor):
 
         target_name = self.visit(target)
         iterable_expr = self.visit(iterable)
-        # emit a simple range loop if iterable is a vector or expression
+        
         self.emit(f"for (auto {target_name} : {iterable_expr}) {{")
         self.push()
         if suite:
@@ -268,13 +262,11 @@ class CppVisitor(Visitor):
         self.pop()
         self.emit("}")
 
-    # Sentences: assignment must return string for top-level (so generate_full_output can place it)
     def visit_assignment(self, node):
         name = node.value
         expr_node = node.children[0] if node.children else None
         expr = self.visit(expr_node) if expr_node else "/*missing_expr*/"
 
-        # get inferred type: prefer node.inferred_type, fallback to symtab lookup
         t = getattr(node, "inferred_type", None)
         if t is None and self.symtab is not None:
             tt = self.symtab.lookup(name)
@@ -283,22 +275,19 @@ class CppVisitor(Visitor):
         cpp_t = self.cpp_type_name(t)
 
         if self.inside_function:
-            # in function scope: use function-declared set to know if declared already
             cur_declared = self.func_declared_stack[-1]
             if name in cur_declared:
                 self.emit(f"{name} = {expr};")
             else:
-                # declare with type if available, else std::any
-                decl_type = cpp_t if cpp_t else "std::any"
+                decl_type = cpp_t if cpp_t != "std::any" else "std::any"
                 self.emit(f"{decl_type} {name} = {expr};")
                 cur_declared.add(name)
-            return ""  # function emissions already done
+            return ""
         else:
-            # top-level: return a string; generate_full_output will append semicolon
             if name in self.declared_main:
                 return f"{name} = {expr}"
             else:
-                decl_type = cpp_t if cpp_t else "std::any"
+                decl_type = cpp_t if cpp_t != "std::any" else "std::any"
                 self.declared_main.add(name)
                 return f"{decl_type} {name} = {expr}"
 
@@ -307,7 +296,7 @@ class CppVisitor(Visitor):
             expr = self.visit(node.children[0])
             self.emit(f"return {expr};")
         else:
-            self.emit("return {};")
+            self.emit("return;")
 
     def visit_break(self, node):
         self.emit("break;")
@@ -324,64 +313,82 @@ class CppVisitor(Visitor):
 
         if self.inside_function:
             if expr_cpp and expr_cpp.strip():
-                # if expression already emitted (e.g., visit_assignment emitted), do nothing
-                # but if it's a simple expression, emit as statement
                 self.emit(f"{expr_cpp};")
             return ""
         else:
-            # top-level: return expression to be placed in main
             return expr_cpp
 
-    # Expressions: returns string as C++
     def visit_binary_op(self, node):
-        left = self.visit(node.children[0])
-        right = self.visit(node.children[1])
+        left_node = node.children[0]
+        right_node = node.children[1]
         op = node.value
 
-        # If either child is a string literal or inferred string (node.inferred_type),
-        # we want concatenation without numeric any_cast
-        # But this is approximate: prefer using node children inferred types if present
-        left_t = getattr(node.children[0], "inferred_type", None)
-        right_t = getattr(node.children[1], "inferred_type", None)
+        left = self.visit(left_node)
+        right = self.visit(right_node)
 
-        is_string = (left_t and getattr(left_t, "name", None) == "string") or \
-                    (right_t and getattr(right_t, "name", None) == "string")
+        # Get types
+        left_type = self.get_expr_type(left_node)
+        right_type = self.get_expr_type(right_node)
+        result_type = self.get_expr_type(node)
 
-        if op == "+" and is_string:
+        # String concatenation (no any_cast needed)
+        if result_type and result_type.name == 'string':
             return f"({left} + {right})"
 
-        # default numeric fallback (user uses any_cast double)
-        return f"std::any_cast<double>({left}) {op} std::any_cast<double>({right})"
+        # Both operands are concrete numeric types (no any_cast)
+        if left_type and right_type:
+            if left_type.is_numeric() and right_type.is_numeric():
+                return f"({left} {op} {right})"
+            elif left_type.name == 'string' or right_type.name == 'string':
+                return f"({left} + {right})"
+
+        # At least one is ANY - need any_cast
+        if (left_type and left_type.name == 'any') or (right_type and right_type.name == 'any'):
+            left_casted = self.wrap_any_cast(left, left_node)
+            right_casted = self.wrap_any_cast(right, right_node)
+            return f"({left_casted} {op} {right_casted})"
+
+        # Default numeric
+        return f"({left} {op} {right})"
 
     def visit_unary_op(self, node):
         operand = self.visit(node.children[0])
         op = node.value
         if op == 'not':
             return f"!({operand})"
-        return f"{op}{operand}"
+        return f"{op}({operand})"
 
     def visit_comparison(self, node):
         left = self.visit(node.children[0])
         right = self.visit(node.children[1])
         op = node.value
-        # comparisons in C++ use &&/|| equivalents? keep original Python operator tokens
-        # but ensure operands are raw values (no any_cast if they are numbers/strings)
-        return f"({left} {op} {right})"
+        
+        # Map Python operators to C++
+        op_map = {
+            '==': '==',
+            '!=': '!=',
+            '<': '<',
+            '>': '>',
+            '<=': '<=',
+            '>=': '>=',
+            'is': '==',
+            'in': 'in'  # Special handling needed
+        }
+        cpp_op = op_map.get(op, op)
+        return f"({left} {cpp_op} {right})"
 
     def visit_boolean_op(self, node):
         left = self.visit(node.children[0])
         right = self.visit(node.children[1])
         op = node.value
+        
+        # Map Python boolean operators to C++
+        if op == 'and':
+            op = '&&'
+        elif op == 'or':
+            op = '||'
+            
         return f"({left} {op} {right})"
-
-    def visit_augmented_assignment(self, node):
-        target = self.visit(node.children[0])
-        expr = self.visit(node.children[1])
-        op = node.value
-        if self.inside_function:
-            self.emit(f"{target} {op} {expr};")
-            return ""
-        return f"{target} {op} {expr}"
 
     def visit_call(self, node):
         func_name = node.value
@@ -393,8 +400,24 @@ class CppVisitor(Visitor):
             if self.inside_function:
                 self.emit(f"std::cout << {join_expr} << std::endl;")
                 return ""
-            # top-level: return the expression without trailing semicolon
             return f"std::cout << {join_expr} << std::endl"
+
+        # Type conversion functions
+        if func_name in ("str", "int", "float", "bool"):
+            if arg_exprs:
+                return f"{func_name}({arg_exprs[0]})"
+            return f"{func_name}()"
+
+        if func_name == "len":
+            if arg_exprs:
+                return f"{arg_exprs[0]}.size()"
+            return "0"
+
+        if func_name == "range":
+            # Simple range implementation - returns a vector
+            if len(arg_exprs) == 1:
+                return f"/* range(0, {arg_exprs[0]}) */"
+            return f"/* range({', '.join(arg_exprs)}) */"
 
         return f"{func_name}({', '.join(arg_exprs)})"
 
@@ -415,9 +438,8 @@ class CppVisitor(Visitor):
             text = ast.literal_eval(raw)
         except:
             text = raw[1:-1] if isinstance(raw, str) and len(raw) >= 2 else raw
-        # escape for C++
         escaped = text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\t', '\\t')
-        return f"\"{escaped}\""
+        return f'"{escaped}"'
 
     def visit_boolean(self, node):
         v = str(node.value)
@@ -428,27 +450,49 @@ class CppVisitor(Visitor):
     def visit_pair(self, node):
         k = self.visit(node.children[0])
         v = self.visit(node.children[1])
-        return f"make_pair({k}, {v})"
+        return f"{{{k}, {v}}}"
 
     def visit_list(self, node):
         items = ", ".join(self.visit(c) for c in node.children)
-        return f"vector<any>{{{items}}}"
+        
+        # Get element type
+        list_type = self.get_expr_type(node)
+        if list_type and list_type.name == 'list' and list_type.params:
+            elem_cpp_type = self.cpp_type_name(list_type.params[0])
+            return f"std::vector<{elem_cpp_type}>{{{items}}}"
+        
+        return f"std::vector<std::any>{{{items}}}"
 
     def visit_tuple(self, node):
         items = ", ".join(self.visit(c) for c in node.children)
-        return f"make_tuple({items})"
+        
+        # Get tuple types
+        tuple_type = self.get_expr_type(node)
+        if tuple_type and tuple_type.name == 'tuple' and tuple_type.params:
+            types = ", ".join(self.cpp_type_name(p) for p in tuple_type.params)
+            return f"std::tuple<{types}>({items})"
+        
+        return f"std::make_tuple({items})"
 
     def visit_dict(self, node):
         items = []
         for c in node.children:
             if is_node(c) and c.type == "pair":
-                items.append(f"{{{self.visit(c.children[0])}, {self.visit(c.children[1])}}}")
+                items.append(self.visit(c))
         inner = ", ".join(items)
-        return f"map<any, any>{{{inner}}}"
+        
+        # Get dict types
+        dict_type = self.get_expr_type(node)
+        if dict_type and dict_type.name == 'dict' and len(dict_type.params) >= 2:
+            k_type = self.cpp_type_name(dict_type.params[0])
+            v_type = self.cpp_type_name(dict_type.params[1])
+            return f"std::map<{k_type}, {v_type}>{{{inner}}}"
+        
+        return f"std::map<std::any, std::any>{{{inner}}}"
 
     def visit_set(self, node):
         items = ", ".join(self.visit(c) for c in node.children)
-        return f"set<any>{{{items}}}"
+        return f"std::set<std::any>{{{items}}}"
 
     def visit_parameter(self, node):
         return node.value
@@ -465,8 +509,8 @@ def print_symbol_table(symtab):
     print("====================")
 
 def main():
-    parser_cli = argparse.ArgumentParser(description="Visitor that generates C++ from AST produced by your Parser")
-    parser_cli.add_argument("input", help="Python source file (parsed by your Parser)")
+    parser_cli = argparse.ArgumentParser(description="Visitor that generates C++ from AST")
+    parser_cli.add_argument("input", help="Python source file")
     parser_cli.add_argument("-o", "--output", help="Optional output .cpp file", default=None)
     args = parser_cli.parse_args()
 
@@ -477,14 +521,12 @@ def main():
 
     src = open(fname, "r", encoding="utf-8").read()
 
-    # Build parser and parse with it
     p = Parser.Parser(debug=False)
     p.build()
     ast_tree = p.parse(src)
 
-    # If errors, print, but try to generate something
     if p.errors:
-        print("\n===PARSE ERRORS ===")
+        print("\n=== PARSE ERRORS ===")
         for e in p.errors:
             print(e)
 
@@ -492,17 +534,17 @@ def main():
     analyzer = AnalyzerClass()
     analyzer.analyze(ast_tree)
 
-    # pass analyzer.symtab so visitor can use inferred types
     visitor = CppVisitor(analyzer.symtab)
     cpp_code = visitor.visit(ast_tree)
 
-    # For debug purposes
     print_symbol_table(analyzer.symtab)
 
     base = os.path.splitext(fname)[0]
-    out_name = f"{base}.cpp"
+    out_name = args.output if args.output else f"{base}.cpp"
     with open(out_name, "w", encoding="utf-8") as out:
         out.write(cpp_code)
+    
+    print(f"\n✓ Generated {out_name}")
 
 if __name__ == "__main__":
     main()
