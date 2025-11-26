@@ -257,8 +257,15 @@ class CppVisitor(Visitor):
                     params.append((pname, ptype))
 
         # Generate signature using cpp_type (it accepts strings or Type objects)
-        ret_cpp = self.cpp_type(ret_type)
-        param_decls = [f"{self.cpp_type(t)} {n}" if t is not None else f"std::any {n}" for (n,t) in params]
+        if self.current_function_numeric:
+            ret_cpp = "double"
+            # construir param_decls forzando double para cada parámetro
+            param_decls = []
+            for (n, _t) in params:
+                param_decls.append(f"double {n}")
+        else:
+            ret_cpp = self.cpp_type(ret_type)
+            param_decls = [f"{self.cpp_type(t)} {n}" if t is not None else f"std::any {n}" for (n,t) in params]
 
         # Emit function
         self.emit(f"{ret_cpp} {name}({', '.join(param_decls)}) {{")
@@ -366,26 +373,23 @@ class CppVisitor(Visitor):
 
         # Determine desired cpp type for this variable
         declared_type = getattr(node, "inferred_type", None)
+        # Detectar si la expresión es literal string
+        is_string_literal = False
+        if expr_node and getattr(expr_node, "type", None) == "string":
+            is_string_literal = True
+
         if self.inside_function and self.current_function_numeric:
-            # force numeric
+            # dentro de función numérica: forzamos double
             cpp_t = "double"
         else:
-            cpp_t = self.cpp_type(declared_type) if declared_type is not None else "std::any"
-
-        if self.inside_function:
-            cur_declared = self.func_declared_stack[-1]
-            if name in cur_declared:
-                self.emit(f"{name} = {expr};")
+            # fuera de función: si analizer no dio tipo y no es string literal -> double
+            if declared_type is None:
+                if is_string_literal:
+                    cpp_t = "std::string"
+                else:
+                    cpp_t = "double"
             else:
-                self.emit(f"{cpp_t} {name} = {expr};")
-                cur_declared.add(name)
-            return ""
-        else:
-            if name in self.declared_main:
-                return f"{name} = {expr}"
-            else:
-                self.declared_main.add(name)
-                return f"{cpp_t} {name} = {expr}"
+                cpp_t = self.cpp_type(declared_type)
 
     def visit_return(self, node):
         if node.children:
@@ -412,6 +416,24 @@ class CppVisitor(Visitor):
             return ""
         else:
             return expr_cpp
+        
+    def wrap_any_cast(self, expr_str, node, target_cpp_type):
+        """
+        For our policy: treat any-unknown as numeric -> static_cast<double>(...)
+        We avoid std::any_cast since we assume non-strings are doubles.
+        """
+        # Si node tiene tipo concreto no devolvemos cast
+        node_t = getattr(node, "inferred_type", None)
+        if node_t is not None and getattr(node_t, "name", None) != 'any':
+            return expr_str
+
+        # Forzamos static_cast al tipo objetivo (usualmente "double")
+        if target_cpp_type == "double" or target_cpp_type == "int":
+            return f"static_cast<{target_cpp_type}>({expr_str})"
+        if target_cpp_type == "std::string":
+            # si nos piden string, llamamos a helper str()
+            return f"str({expr_str})"
+        return expr_str
 
     def visit_binary_op(self, node):
         left_node = node.children[0]
