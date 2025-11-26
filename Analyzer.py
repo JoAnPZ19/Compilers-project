@@ -53,13 +53,16 @@ class Symbol:
 class SymbolTable:
     def __init__(self):
         self.scopes = [dict()]
+        self.scope_names = ["global"]
 
-    def push(self):
+    def push(self, name="<scope>"):
         self.scopes.append({})
+        self.scope_names.append(name)
 
     def pop(self):
         if len(self.scopes) > 1:
             self.scopes.pop()
+            self.scope_names.pop()
 
     def declare(self, name, type_):
         self.scopes[-1][name] = Symbol(name, type_)
@@ -81,11 +84,17 @@ class SymbolTable:
         return self.scopes[-1]
 
     def __repr__(self):
-        s = []
-        for scope in self.scopes:
-            items = ", ".join(f"{k}:{v.type}" for k,v in scope.items())
-            s.append("{" + items + "}")
-        return "SymbolTable(" + " | ".join(s) + ")"
+        lines = []
+        for i, (scope, scope_name) in enumerate(zip(self.scopes, self.scope_names)):
+            items = []
+            for k, v in scope.items():
+                items.append(f"  {k}: {v.type}")
+            if items:
+                lines.append(f"Scope {i} ({scope_name}):")
+                lines.extend(items)
+            else:
+                lines.append(f"Scope {i} ({scope_name}): <empty>")
+        return "\n".join(lines)
 
 def is_node(x):
     return hasattr(x, "type") and hasattr(x, "children")
@@ -304,18 +313,23 @@ class Analyzer:
                     pname = p.value
                     params.append((pname, ANY))
 
+        # Pre-declare function with ANY return type
         func_type = Type('func', [*(pt for (_n,pt) in params), ANY])
         self.symtab.declare(name, func_type)
 
-        self.symtab.push()
+        # Push new scope for function
+        self.symtab.push(f"function:{name}")
         for pname, ptype in params:
             self.symtab.declare(pname, ptype)
 
+        # Collect return types before visiting body
         ret_types = []
         self._collect_returns(suite_node, ret_types)
 
+        # Visit function body
         self.visit(suite_node)
 
+        # Determine final return type
         ret_final = NONE
         if ret_types:
             unified = ret_types[0]
@@ -325,16 +339,17 @@ class Analyzer:
                 elif not unified.equals(rt):
                     unified = ANY
             ret_final = unified
-        else:
-            ret_final = NONE
 
+        # Update function type with actual return type in parent scope
+        self.symtab.pop()
+        
+        # Update in global scope
         ftype = self.symtab.lookup(name)
         if ftype and isinstance(ftype, Type) and ftype.name == 'func':
             ftype.params = ftype.params[:-1] + [ret_final]
             self.symtab.update(name, ftype)
             self.function_returns[name] = ret_final
 
-        self.symtab.pop()
         return self.annotate(node, Type('func', [*(pt for (_n,pt) in params), ret_final]))
 
     def _collect_returns(self, node, ret_types):
@@ -416,7 +431,8 @@ class Analyzer:
         self.visit(node.children[0])
         self.visit(node.children[1])
         if len(node.children) > 2:
-            self.visit(node.children[2])
+            for item in node.children[2:]:
+                self.visit(item)
 
     def visit_elif(self, node):
         self.visit(node.children[0])
@@ -434,11 +450,14 @@ class Analyzer:
         target = node.children[0]
         iterable = node.children[1]
         suite = node.children[2]
+        
         it = self.visit(iterable)
+        
         if target and is_node(target) and target.type == "identifier":
             tname = target.value
             if it and isinstance(it, Type) and it.name == 'list' and it.params:
                 self.symtab.declare(tname, it.params[0])
             else:
                 self.symtab.declare(tname, ANY)
+        
         self.visit(suite)

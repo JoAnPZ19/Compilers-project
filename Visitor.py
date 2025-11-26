@@ -29,16 +29,19 @@ class Visitor:
 
 class CppVisitor(Visitor):
     def __init__(self, symtab=None):
-        self.lines = []
+        self.function_lines = []  # Lines for function definitions
+        self.main_lines = []      # Lines for main function
         self.symtab = symtab
         self.indent_level = 0
-        self.top_level_statements = []
         self.inside_function = False
         self.declared_main = set()
         self.func_declared_stack = []
+        self.current_output = None  # Will point to either function_lines or main_lines
 
     def emit(self, text=""):
-        self.lines.append("    " * self.indent_level + text)
+        line = "    " * self.indent_level + text
+        if self.current_output is not None:
+            self.current_output.append(line)
 
     def push(self):
         self.indent_level += 1
@@ -79,7 +82,7 @@ class CppVisitor(Visitor):
         if t.name == 'dict' and len(t.params) >= 2:
             k_type = self.cpp_type_name(t.params[0])
             v_type = self.cpp_type_name(t.params[1])
-            return f"std::map<{k_type},{v_type}>"
+            return f"std::map<{k_type}, {v_type}>"
         if t.name == 'tuple' and t.params:
             types = ", ".join(self.cpp_type_name(p) for p in t.params)
             return f"std::tuple<{types}>"
@@ -91,23 +94,6 @@ class CppVisitor(Visitor):
         """Get the inferred type of an expression node"""
         return getattr(node, "inferred_type", None)
 
-    def needs_any_cast(self, node, target_type=None):
-        """Check if we need any_cast for this expression"""
-        expr_type = self.get_expr_type(node)
-        if expr_type is None or expr_type.name == 'any':
-            return True
-        if target_type and not expr_type.equals(target_type):
-            return True
-        return False
-
-    def wrap_any_cast(self, expr, node, cpp_type="double"):
-        """Wrap expression with any_cast if needed"""
-        expr_type = self.get_expr_type(node)
-        if expr_type and expr_type.name != 'any':
-            # Already has concrete type, no cast needed
-            return expr
-        return f"std::any_cast<{cpp_type}>({expr})"
-
     def visit_module(self, node):
         for child in node.children:
             if isinstance(child, str):
@@ -115,9 +101,20 @@ class CppVisitor(Visitor):
                     continue
 
             if is_node(child) and child.type == "function_def":
+                # Function definitions go to function_lines
+                self.current_output = self.function_lines
+                self.inside_function = True
                 self.visit(child)
+                self.inside_function = False
             else:
-                self.top_level_statements.append(child)
+                # Top-level statements go to main_lines
+                self.current_output = self.main_lines
+                self.inside_function = False
+                self.func_declared_stack = [self.declared_main]
+                self.indent_level = 1
+                self.visit(child)
+                self.indent_level = 0
+                self.func_declared_stack = []
 
         return self.generate_full_output()
 
@@ -130,6 +127,7 @@ class CppVisitor(Visitor):
             "#include <map>\n"
             "#include <set>\n"
             "#include <tuple>\n"
+            "#include <cmath>\n"
             "using namespace std;\n\n"
         )
 
@@ -142,19 +140,13 @@ class CppVisitor(Visitor):
             "}\n\n"
         )
 
-        functions_cpp = "\n".join(self.lines)
+        functions_cpp = "\n".join(self.function_lines)
+        
+        main_cpp = "int main(int argc, char *argv[]) {\n"
+        main_cpp += "\n".join(self.main_lines)
+        main_cpp += "\n    return 0;\n}\n"
 
-        main = "int main(int argc, char *argv[]) {\n"
-        for stmt in self.top_level_statements:
-            line = self.visit(stmt)
-            if line and line.strip():
-                if line.strip().endswith(";"):
-                    main += f"    {line}\n"
-                else:
-                    main += f"    {line};\n"
-        main += "    return 0;\n}\n"
-
-        return includes + str_helper + functions_cpp + "\n\n" + main
+        return includes + str_helper + functions_cpp + "\n\n" + main_cpp
 
     def visit_function_def(self, node):
         name = node.value
@@ -181,7 +173,6 @@ class CppVisitor(Visitor):
         else:
             cpp_params = [f"std::any {p}" for p in params]
 
-        self.inside_function = True
         self.func_declared_stack.append(set())
 
         self.emit(f"{ret_type_str} {name}({', '.join(cpp_params)}) {{")
@@ -194,7 +185,6 @@ class CppVisitor(Visitor):
         self.emit("}\n")
 
         self.func_declared_stack.pop()
-        self.inside_function = False
 
     def visit_suite(self, node):
         for child in node.children:
@@ -216,10 +206,18 @@ class CppVisitor(Visitor):
                 if is_node(item):
                     if item.type == "elif":
                         self.visit_elif(item)
-                    elif item.type in ("else", "suite"):
+                    elif item.type == "else":
                         self.emit("else {")
                         self.push()
-                        self.visit(item.children[0] if item.children else item)
+                        if item.children:
+                            self.visit(item.children[0])
+                        self.pop()
+                        self.emit("}")
+                    elif item.type == "suite":
+                        # This is an else suite
+                        self.emit("else {")
+                        self.push()
+                        self.visit(item)
                         self.pop()
                         self.emit("}")
 
@@ -255,7 +253,14 @@ class CppVisitor(Visitor):
         target_name = self.visit(target)
         iterable_expr = self.visit(iterable)
         
-        self.emit(f"for (auto {target_name} : {iterable_expr}) {{")
+        # Get the type of the loop variable
+        iter_type = self.get_expr_type(iterable)
+        if iter_type and iter_type.name == 'list' and iter_type.params:
+            elem_type = self.cpp_type_name(iter_type.params[0])
+            self.emit(f"for ({elem_type} {target_name} : {iterable_expr}) {{")
+        else:
+            self.emit(f"for (auto {target_name} : {iterable_expr}) {{")
+        
         self.push()
         if suite:
             self.visit(suite)
@@ -274,22 +279,15 @@ class CppVisitor(Visitor):
 
         cpp_t = self.cpp_type_name(t)
 
-        if self.inside_function:
-            cur_declared = self.func_declared_stack[-1]
-            if name in cur_declared:
-                self.emit(f"{name} = {expr};")
-            else:
-                decl_type = cpp_t if cpp_t != "std::any" else "std::any"
-                self.emit(f"{decl_type} {name} = {expr};")
-                cur_declared.add(name)
-            return ""
+        # Check if variable is already declared in current scope
+        cur_declared = self.func_declared_stack[-1] if self.func_declared_stack else self.declared_main
+        
+        if name in cur_declared:
+            self.emit(f"{name} = {expr};")
         else:
-            if name in self.declared_main:
-                return f"{name} = {expr}"
-            else:
-                decl_type = cpp_t if cpp_t != "std::any" else "std::any"
-                self.declared_main.add(name)
-                return f"{decl_type} {name} = {expr}"
+            decl_type = cpp_t if cpp_t != "std::any" else "auto"
+            self.emit(f"{decl_type} {name} = {expr};")
+            cur_declared.add(name)
 
     def visit_return(self, node):
         if node.children:
@@ -309,14 +307,19 @@ class CppVisitor(Visitor):
         if not expr_node:
             return ""
 
-        expr_cpp = self.visit(expr_node)
-
-        if self.inside_function:
-            if expr_cpp and expr_cpp.strip():
-                self.emit(f"{expr_cpp};")
+        # Check if it's an assignment or other statement that handles itself
+        if is_node(expr_node) and expr_node.type == "assignment":
+            self.visit(expr_node)
             return ""
-        else:
-            return expr_cpp
+
+        expr_cpp = self.visit(expr_node)
+        
+        if expr_cpp and expr_cpp.strip():
+            # Don't double-emit for print statements
+            if not (is_node(expr_node) and expr_node.type == "call" and expr_node.value == "print"):
+                self.emit(f"{expr_cpp};")
+        
+        return ""
 
     def visit_binary_op(self, node):
         left_node = node.children[0]
@@ -331,24 +334,22 @@ class CppVisitor(Visitor):
         right_type = self.get_expr_type(right_node)
         result_type = self.get_expr_type(node)
 
-        # String concatenation (no any_cast needed)
+        # Handle power operator
+        if op == '**':
+            return f"pow({left}, {right})"
+
+        # String concatenation
         if result_type and result_type.name == 'string':
             return f"({left} + {right})"
 
-        # Both operands are concrete numeric types (no any_cast)
+        # Both operands are concrete types
         if left_type and right_type:
             if left_type.is_numeric() and right_type.is_numeric():
                 return f"({left} {op} {right})"
             elif left_type.name == 'string' or right_type.name == 'string':
                 return f"({left} + {right})"
 
-        # At least one is ANY - need any_cast
-        if (left_type and left_type.name == 'any') or (right_type and right_type.name == 'any'):
-            left_casted = self.wrap_any_cast(left, left_node)
-            right_casted = self.wrap_any_cast(right, right_node)
-            return f"({left_casted} {op} {right_casted})"
-
-        # Default numeric
+        # Default
         return f"({left} {op} {right})"
 
     def visit_unary_op(self, node):
@@ -397,10 +398,8 @@ class CppVisitor(Visitor):
 
         if func_name == "print":
             join_expr = " << ".join(arg_exprs) if arg_exprs else '""'
-            if self.inside_function:
-                self.emit(f"std::cout << {join_expr} << std::endl;")
-                return ""
-            return f"std::cout << {join_expr} << std::endl"
+            self.emit(f"std::cout << {join_expr} << std::endl;")
+            return ""
 
         # Type conversion functions
         if func_name in ("str", "int", "float", "bool"):
@@ -414,8 +413,9 @@ class CppVisitor(Visitor):
             return "0"
 
         if func_name == "range":
-            # Simple range implementation - returns a vector
+            # Generate vector initialization
             if len(arg_exprs) == 1:
+                # range(n) - 0 to n-1
                 return f"/* range(0, {arg_exprs[0]}) */"
             return f"/* range({', '.join(arg_exprs)}) */"
 
@@ -500,13 +500,15 @@ class CppVisitor(Visitor):
     def visit_pass(self, node):
         return ""
 
+    def visit_none(self, node):
+        return "nullptr"
+
 def print_symbol_table(symtab):
-    print("=== SYMBOL TABLE ===")
-    for i, scope in enumerate(symtab.scopes):
-        print(f"--- Scope {i} ---")
-        for name, symbol in scope.items():
-            print(f"{name} : {symbol.type}")
-    print("====================")
+    print("\n" + "="*60)
+    print("SYMBOL TABLE")
+    print("="*60)
+    print(symtab)
+    print("="*60 + "\n")
 
 def main():
     parser_cli = argparse.ArgumentParser(description="Visitor that generates C++ from AST")
@@ -534,17 +536,18 @@ def main():
     analyzer = AnalyzerClass()
     analyzer.analyze(ast_tree)
 
+    # Print readable symbol table
+    print_symbol_table(analyzer.symtab)
+
     visitor = CppVisitor(analyzer.symtab)
     cpp_code = visitor.visit(ast_tree)
-
-    print_symbol_table(analyzer.symtab)
 
     base = os.path.splitext(fname)[0]
     out_name = args.output if args.output else f"{base}.cpp"
     with open(out_name, "w", encoding="utf-8") as out:
         out.write(cpp_code)
     
-    print(f"\n✓ Generated {out_name}")
+    print(f"✓ Generated {out_name}")
 
 if __name__ == "__main__":
     main()
