@@ -96,7 +96,6 @@ class Analyzer:
         self.function_returns = {}
         self.errors = []
         self._debug = False
-        self.type_history = {} 
 
     def analyze(self, node):
         self.visit(node)
@@ -135,16 +134,8 @@ class Analyzer:
 
     def visit_pass(self, node):
         return self.annotate(node, NONE)
-    
-    def record_type(self, name, t, node=None):
-        """Record each type change for a variable for type evolution tracing."""
-        if name not in self.type_history:
-            self.type_history[name] = []
 
-        lineno = getattr(node, "lineno", None)
-        self.type_history[name].append((lineno, t))
-
-        # --- Literals ---
+    # --- Literals ---
     def visit_number(self, node):
         v = node.value
         if isinstance(v, int):
@@ -193,11 +184,7 @@ class Analyzer:
             else:
                 self.symtab.update(name, t_expr)
 
-        # AFTER updating the final type in the symbol table:
-        final_type = self.symtab.lookup(name)
-        self.record_type(name, final_type, node)
-
-        return self.annotate(node, final_type)
+        return self.annotate(node, t_expr)
 
     def visit_expression_stmt(self, node):
         if not node.children:
@@ -213,52 +200,14 @@ class Analyzer:
         right_node = node.children[1]
         op = node.value
 
-        # Inferimos tipos de los hijos
         t_left = self.visit(left_node) or ANY
         t_right = self.visit(right_node) or ANY
 
-        # Detectores útiles
-        left_is_ident = is_node(left_node) and getattr(left_node, "type", None) == "identifier"
-        right_is_ident = is_node(right_node) and getattr(right_node, "type", None) == "identifier"
-        left_is_string_literal = getattr(left_node, "type", None) == "string"
-        right_is_string_literal = getattr(right_node, "type", None) == "string"
-
-        # Helper: actualizar symbol table y registrar historial si actualizamos un identificador
-        def promote_ident_to(name, new_type, node_ref=None):
-            prev = self.symtab.lookup(name)
-            if prev is None:
-                self.symtab.declare(name, new_type)
-                self.record_type(name, new_type, node_ref)
-            else:
-                # Si prev es ANY o distinto a new_type, actualizamos (con reglas numéricas)
-                if prev.equals(ANY):
-                    self.symtab.update(name, new_type)
-                    self.record_type(name, new_type, node_ref)
-                elif prev.is_numeric() and new_type.is_numeric():
-                    # promover int->double si aplica
-                    if prev.equals(DOUBLE) or new_type.equals(DOUBLE):
-                        self.symtab.update(name, DOUBLE)
-                        self.record_type(name, DOUBLE, node_ref)
-                    else:
-                        self.symtab.update(name, INT)
-                        self.record_type(name, INT, node_ref)
-                else:
-                    # si hay conflicto tipo (ej: string vs int), preferimos new_type only if prev==ANY handled above.
-                    # No forzamos sobreescritura arbitraria; dejamos prev y señalizamos error si viene una operación incompatible.
-                    pass
-
-        # -- Regla 1: Si cualquiera es literal string y operador '+' => concatenación string
-        if op == '+' and (left_is_string_literal or right_is_string_literal):
-            # Promocionar el identificador opuesto a string si era ANY
-            if left_is_string_literal and right_is_ident:
-                promote_ident_to(right_node.value, STRING, right_node)
-                t_right = self.symtab.lookup(right_node.value) or t_right
-            if right_is_string_literal and left_is_ident:
-                promote_ident_to(left_node.value, STRING, left_node)
-                t_left = self.symtab.lookup(left_node.value) or t_left
+        # String concatenation
+        if op == '+' and (t_left.equals(STRING) or t_right.equals(STRING)):
             return self.annotate(node, STRING)
 
-        # -- Regla 2: Si ambos ya son string inferidos => string (concatenación)
+        # Both strings
         if t_left.equals(STRING) and t_right.equals(STRING):
             if op == '+':
                 return self.annotate(node, STRING)
@@ -266,46 +215,28 @@ class Analyzer:
                 self.errors.append(f"Incompatible operator '{op}' for strings")
                 return self.annotate(node, ANY)
 
-        # -- Regla 3: Si uno es literal numérico y el otro es identificador ANY, promovemos el identificador
-        # Detectar literal por el nodo hijo
-        if left_is_ident and t_left.equals(ANY) and t_right.is_numeric():
-            # Promover left identificador al tipo de right (INT/DOUBLE)
-            promote_ident_to(left_node.value, t_right, left_node)
-            t_left = self.symtab.lookup(left_node.value) or t_left
-
-        if right_is_ident and t_right.equals(ANY) and t_left.is_numeric():
-            promote_ident_to(right_node.value, t_left, right_node)
-            t_right = self.symtab.lookup(right_node.value) or t_right
-
-        # -- Regla 4: Operaciones numéricas normales
+        # Numeric ops
         if t_left.is_numeric() and t_right.is_numeric():
-            # division fuerza double
-            if op == '/':
-                return self.annotate(node, DOUBLE)
-            # si cualquiera es DOUBLE -> DOUBLE
             if t_left.equals(DOUBLE) or t_right.equals(DOUBLE):
                 return self.annotate(node, DOUBLE)
-            return self.annotate(node, INT)
+            else:
+                if op == '/':
+                    return self.annotate(node, DOUBLE)
+                return self.annotate(node, INT)
 
-        # -- Regla 5: Mezcla STRING <-> NUMERIC => incompatible (no forzamos string)
-        if (t_left.equals(STRING) and t_right.is_numeric()) or (t_right.equals(STRING) and t_left.is_numeric()):
-            self.errors.append(f"Incompatible operands for '{op}': STRING and NUMERIC")
-            return self.annotate(node, ANY)
-
-        # -- Comparisons y booleanos
+        # Comparisons
         if op in ('==', '!=', '<', '<=', '>', '>='):
             return self.annotate(node, BOOL)
 
+        # Boolean ops
         if op in ('and', 'or', '&&', '||'):
             return self.annotate(node, BOOL)
 
-        # -- Si alguno es ANY y no hemos tomado decisión -> ANY
+        # Fallback for ANY
         if t_left.equals(ANY) or t_right.equals(ANY):
             return self.annotate(node, ANY)
 
-        # Fallback conservador
         return self.annotate(node, ANY)
-
 
     def visit_unary_op(self, node):
         operand = node.children[0]
