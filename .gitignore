@@ -2,4 +2,4 @@
 parsetab.py
 *__pycache__/*
 *.out
-*.cpp
+*.vscode
