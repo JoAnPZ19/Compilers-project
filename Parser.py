@@ -69,19 +69,13 @@ class Parser:
     # ---- Grammar ----
 
     def p_module(self, p):
-        """module : statements optional_dedents
-                  | optional_dedents
-                  | statements optional_dedents ENDMARKER"""
+        """module : statements ENDMARKER
+                | ENDMARKER"""
         if len(p) == 2:
-            # only optional dedents or empty
             p[0] = Node("module", None, [])
         else:
             p[0] = Node("module", None, p[1])
 
-    def p_optional_dedents(self, p):
-        """optional_dedents :
-                         | DEDENT optional_dedents"""
-        p[0] = None
 
     def p_optional_newlines(self, p):
         """optional_newlines :
@@ -131,16 +125,14 @@ class Parser:
     # suite: either simple_statement NEWLINE or indented block
     def p_suite(self, p):
         """suite : simple_statement NEWLINE
-                | NEWLINE INDENT statements optional_dedents
-                | INDENT statements optional_dedents
-                | NEWLINE INDENT DEDENT"""
-        if len(p) == 3 and isinstance(p[1], Node):
+                | NEWLINE INDENT statements DEDENT"""
+        if len(p) == 3:
+            # simple statement
             p[0] = Node("suite", None, [p[1]])
-        elif len(p) in (5, 4):
-            stmts = p[2] if len(p) == 4 else p[3]
-            p[0] = Node("suite", None, stmts if isinstance(stmts, list) else [stmts])
         else:
-            p[0] = Node("suite", None, [])
+            # NEWLINE INDENT statements DEDENT
+            p[0] = Node("suite", None, p[3])
+
 
 
     # function definition
@@ -383,7 +375,7 @@ class Parser:
             p[0] = Node("dict", None, p[2])
         else:
             # Multilínea: { \n INDENT dict_pairs NEWLINE DEDENT }
-            p[0] = Node("dict", None, p[5])
+            p[0] = Node("dict", None, p[4])
 
     def p_dict_pairs(self, p):
         """dict_pairs : empty
@@ -417,7 +409,7 @@ class Parser:
         if len(p) == 4:
             p[0] = Node("list", None, p[2])
         else:
-            p[0] = Node("list", None, p[5])
+            p[0] = Node("list", None, p[4])
 
     def p_list_items(self, p):
         """list_items : empty
@@ -444,7 +436,7 @@ class Parser:
         if len(p) == 4:
             p[0] = Node("set", None, p[2])
         else:
-            p[0] = Node("set", None, p[5])
+            p[0] = Node("set", None, p[4])
 
     def p_set_items(self, p):
         """set_items : empty

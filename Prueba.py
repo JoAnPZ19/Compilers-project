@@ -1,47 +1,38 @@
-### PRUEBAS
-def fibonacci(n):    if n == 1 or n == 2:
-        return 1    elif n == 0:
-        return n/0    else:
-        return fibonacci(n-1) + fibonacci(n-2)    
-def fibonacci_d(n):    n_1 = 1
-    n_2 = 1    
+def hola(a,b):
+    return a + b
+
+print(hola(1,2))
+
+def fib(n):
+    if n == 1 or n == 2:
+        return 1
+    else:
+        return fib(n-1) + fib(n-2)
+print (fib(5))
+
+a = 4
+print(a)
+b = 5
+a = "hola"
+b = a + (str(b))
+print(b)
+
+a = [1, "hola", {"z": 1, "x": "ECCI"}, [1,2,3,4], (1,2,3,4)]
+print(a)
+print("Fibonacci")
+
+for i in range(len(a)-1):
+    print(a[i])
     
-    while (n_1 < n):        new = n_1 + n_2
-        n_2 = n_1        n_1 = new
-        return n_1
-
-def iter_example():    l = [1,2.5,3,"hola",5,"mundo"]
-        it = iter(l)
-            for i in l:
-        print(next(it))    return True
-        
-def map_ex():    
-    d = {        "hola": "mundo",
-        1: [1,2,3,4,5],        "dict": {'adios': ':D'}
-    }    
-    for k in d.keys():        print(d[k])
-        
-    return "hola" + "mundo"        
-    def default_ex(a='hola'):
-    return (a)
-
-def set_ex():    
-    a = {1,2,"hola",4,5}    
-    return 2 in a
-def tuple_ex():    
-    a = (5,6,'joseph')    b = (1,2, 'valverde')
-        return a + b
-
-def slices_ex():    l = [1,2,3,4,5,6,7,7,8,9]
-        print(l[-2])
-    print(l[1:-2])    
-    k = l[1:2] + l[-3:-4]    return (k)
-    def string_ex():
-    print("profe"[2:4])    print("profe"[2:4] + "profe"[0:2] + "profe"[-1])
+for e in a[3]:
+    print (e)
     
-    print(random_operation(5,6))
-print(fibonacci(4))print(fibonacci_d(4))
-print(iter_example())print(map_ex())
-print(default_ex())print(tuple_ex())
-print(set_ex())        print(slices_ex())
-string_ex()
+a=5
+b=10
+while a < b:
+    print(fib(b-5))
+    c = b
+    b = "hola"
+    b=c-2
+print("Si printeo mis probabilidades de graduarme suben :)")
+
