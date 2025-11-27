@@ -1,0 +1,146 @@
+import time
+
+start_time = time.time()
+
+def fibonacci_recursive(n):
+    """
+    Calculates the nth Fibonacci number using a recursive approach.
+    
+    This method is conceptually simple but less efficient due to 
+    repeated calculations (high time complexity, O(2^n)).
+
+    :param n: The position (integer) in the Fibonacci sequence (n >= 0).
+    :return: The nth Fibonacci number (integer).
+    """
+    # Base cases: F(0) = 0, F(1) = 1
+    if n <= 0:
+        return 0
+    if n == 1:
+        return 1
+    return fibonacci_recursive(n - 1) + fibonacci_recursive(n - 2)
+
+def fibonacci_iterative(n):
+    """
+    Calculates the nth Fibonacci number using an iterative approach (a loop).
+    
+    This method is highly efficient (low time complexity, O(n)) and
+    avoids redundant calculations by building the sequence bottom-up.
+
+    :param n: The position (integer) in the Fibonacci sequence (n >= 0).
+    :return: The nth Fibonacci number (integer).
+    """
+    # Handle non-positive input
+    if n <= 0:
+        return 0
+    # Handle the first term
+    if n == 1:
+        return 1
+
+    a = 0
+    b = 1
+
+    for i in range(2, n + 1):
+        # Calculate the next number (F(i))
+        c = a + b
+        # Update the sequence for the next iteration
+        a = b # Move F(i-1) to the F(i-2) position
+        b = c # Store the new F(i) as F(i-1)
+        
+    # 'b' currently holds the value of F(n)
+    return b
+
+# Example usage (for testing the transpilation of calls)
+print("Recursive F(10):")
+print(fibonacci_recursive(10)) 
+
+print("Iterative F(10):")
+print(fibonacci_iterative(10))
+
+# Multiple Calculations
+for i in range(41):
+    print(i, "- Recursive Fibonacci: ", fibonacci_recursive(i))
+
+print("---------------------------------------------------------")
+
+n = 0
+while n < 41:
+    print(n, "- Iterative Fibonacci: ", fibonacci_iterative(n))
+    n = n + 1
+
+numbers0 = [1345, 928, 545, 737, 1908, 953, 179, 493, 1572, 1034, 107, 1373, 1690, 260, 1806, 368, 1958, 1235, 690, 915, 757, 1060, 1141, 631, 1233, 1391, 1138, 918, 86, 664, 975, 847, 957, 1898, 1962, 1446, 1415, 1374, 1226, 1158, 704, 202, 157, 1784, 121]
+numbers1 = [2, 4, 6 ,12, 909, 43, 1, 7, 7, 888, 11, 33, 24, 1, 5, 9, 41, 37, 15, 78, 100]
+numbers2 = [1825, 391, 227, 557, 1753, 344, 1672, 532, 1986, 1153, 1991, 750, 71, 1653, 669, 927, 1461, 226, 249, 1009, 203, 1446, 920, 301, 1797, 1905, 391, 1734, 917, 1036, 1120, 1359, 1398, 1144, 1910, 1962, 227, 145, 606, 1067, 682, 1826, 1818, 1263, 1755]
+numbers3 = [1911, 819, 545, 1583, 1569]
+numbers4 = [989, 1616, 34, 836, 251, 211, 1645, 1425, 1360, 1289, 892, 651, 1972, 589, 643, 1219, 109, 639, 1547, 1196, 406, 195, 2]
+numbers5 = [189, 1227, 364, 1609, 1769, 577, 1754, 914, 1925, 367, 1243, 1658, 59, 1996, 1522, 501, 1879, 1570, 1017, 673, 1574, 121, 1164, 648, 1726, 1250, 1624, 726, 944, 1499, 1429, 1296, 360, 1005, 1338, 1073, 61, 195, 1446, 395, 1453, 1458]
+numbers6 = [752, 1887, 1863, 1630, 1980, 1217, 157, 1232, 29, 217, 1268, 603, 419, 1268, 1420, 694, 812, 1672, 1540, 321, 728, 330, 396, 594, 1184, 1914, 984, 697, 947, 1424, 1907, 1043, 1740, 248, 1455, 1007, 1201, 591, 819, 1819, 1752, 1084, 342, 744, 102, 1784, 1317]
+numbers7 = [1045, 681, 1100, 1705, 417, 584, 1212, 1404, 297, 951, 838, 83, 730, 16, 1211, 1915, 897, 1557, 1422, 208, 981, 1430, 47, 1766, 371, 1102]
+numbers8 = [1955, 798, 304, 1262, 1363]
+numbers9 = [1958, 1031, 668, 505, 1378, 42, 737, 1350, 1215, 709, 99, 322, 738, 257, 139, 1522, 1654, 509, 1193, 1633, 786, 653, 727, 1751, 1023, 1440, 1845, 990, 1239, 490, 975, 263, 899, 773, 1925, 1415, 629, 489, 1997, 1080, 450]
+
+# =========================================================================
+# 3. BUBBLE SORT FUNCTION
+# =========================================================================
+def bubble_sort(arr):
+    """
+    Sorts a list of numbers using the Bubble Sort algorithm.
+    
+    Bubble Sort repeatedly steps through the list, compares adjacent 
+    elements and swaps them if they are in the wrong order. 
+    The pass through the list is repeated until the list is sorted.
+
+    :param arr: The list (vector) of numbers to be sorted.
+    :return: The sorted list (vector).
+    """
+    n = len(arr)
+    
+    # Outer loop: Traverse through all list elements
+    # (n-1 passes are sufficient)
+    for i in range(n - 1):
+        # Inner loop: Last i elements are already in place, 
+        # so we only need to check up to n - i - 1
+        for j in range(0, n - i - 1):
+            
+            # Compare adjacent elements
+            if arr[j] > arr[j + 1]:
+                # Swap elements if the current is greater than the next
+                # Python swap syntax: arr[j], arr[j + 1] = arr[j + 1], arr[j]
+                
+                # Using temporary variable for C++ clarity (optional, but robust)
+                temp = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = temp
+                
+    return arr
+
+print("---------- Original list:")
+print(numbers0)
+print(numbers1)
+print(numbers2)
+print(numbers3)
+print(numbers4)
+print(numbers5)
+print(numbers6)
+print(numbers7)
+print(numbers8)
+print(numbers9)
+
+# Call the bubble sort function
+sorted_numbers0 = bubble_sort(numbers0)
+
+print("---------- Sorted list (Bubble Sort):")
+print(bubble_sort(numbers0))
+print(bubble_sort(numbers1))
+print(bubble_sort(numbers2))
+print(bubble_sort(numbers3))
+print(bubble_sort(numbers4))
+print(bubble_sort(numbers5))
+print(bubble_sort(numbers6))
+print(bubble_sort(numbers7))
+print(bubble_sort(numbers8))
+print(bubble_sort(numbers9))
+
+final_time = time.time()
+elapsed_time = final_time - start_time
+
+print("----- Elapsed time: ", elapsed_time)
