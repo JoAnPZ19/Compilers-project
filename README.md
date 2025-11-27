@@ -3,137 +3,74 @@
 ## Description
 Fangless Python is a simplified Python-like language designed for experimentation with lexing, parsing, static analysis, AST processing, and code generation.
 
-## What's included? 
+This project implements a complete toolchain to transpile Python-like source code into optimized, modern C++ code.
 
--This project includes:
--An indentation-sensitive lexer (Python-style INDENT/DEDENT)
--A PLY (Python Lex-Yacc) parser
--A clean AST node system
--A static type inference analyzer
--A C++ code generator, capable of transpiling Fangless Python to modern C++
+***
 
-### Indentation-based Lexer
+## 📦 What's Included? 
 
-The custom lexer converts physical indentation into INDENT and DEDENT tokens, closely matching Python’s own behavior.
-This allows block structures without braces and enables clear, Pythonic grammar rules in the parser.
+This project includes the following core components:
 
+* **`Lexer.py`**: An indentation-sensitive lexer (Python-style `INDENT`/`DEDENT`) that converts physical indentation into tokens, allowing for clear, Pythonic grammar rules.
+* **`Parser.py`**: A PLY (Python Lex-Yacc) parser that builds a clean **Abstract Syntax Tree (AST)** 
 
-### Full Parser for Core Language Constructs
+[Image of Abstract Syntax Tree diagram]
+ from the tokens.
+* **`Analyzer.py`**: A **static type inference analyzer** that traverses the AST to determine variable and expression types, supporting complex structures like lists, dictionaries, and functions.
+* **`Visitor.py`**: The C++ code generator (`CppVisitor`), capable of transpiling Fangless Python to modern C++ (`.cpp` files). It includes logic to handle dynamic Python features (like type reassignment) by issuing **transpilation warnings** and falling back to `std::any` where necessary.
+* **`benchmark.py`**: Python file containing the **Iterative Fibonacci** and **Bubble Sort** implementations, used to measure Python's native execution time.
+* **`benchmark.cpp`**: The C++ file generated from `benchmark.py`, used to measure the execution time of the transpiled code.
 
-The parser supports:
-- def ...: function definitions
-- Indented suites / blocks
-- Assignments
-- Arithmetic and boolean expressions
-- Conditionals (if / elif / else)
-- Loop constructs (for, while)
-- return statements
-- Lists, tuples, dictionaries
-- Subscripts and indexing
-- Function calls
-- Built-ins: print, len, range, etc.
-- Comments and blank lines are ignored.
+### Supported Constructs
 
-AST Design
+The parser and transpiler support:
+* `def ...:` function definitions
+* Indented suites / blocks
+* Assignments and type reassignments (with warnings)
+* Arithmetic, comparison, and boolean expressions
+* Conditionals (`if` / `elif` / `else`)
+* Loop constructs (`for`, `while`, `range` iteration)
+* `return`, `break`, and `continue` statements
+* Lists (`std::vector`), tuples (`std::tuple`), dictionaries (`std::map`), and sets (`std::set`).
+* Subscripts, indexing, and map key access.
+* Function calls and built-ins (`print`, `len`, `str`, `int`, `float`).
 
-A single lightweight Node class represents all parts of the program:
-- type — node type ("if", "assignment", "call", …)
-- value — identifier or literal
-- children — ordered subnodes
+***
 
-This minimal design makes the AST easy to debug, print, transform, and transpile.
-
-## Static Type Analyzer (Type Inference)
-
-Analyzer.py implements a full static type inference pass over the AST.
-It infers:
-
-- int, double, string, bool, none
-- list[T], dict[K,V], tuple[...]
-- Function parameter and return types
-- The type of expressions and variables (Work in progress)
-- Types across control flow
-- A multi-scope symbol table with shadowing (Work in progress)
-- Type System Philosophy
-- This project follows a minimal-string rule: 
-- Only literal "..." strings count as type string 
-- Everything else defaults to numeric (double)
-- str(x) does not convert the function into a “string context”
-- If a function contains no string literals, the whole function becomes numerically typed
-
-This rule allows the C++ generator to produce clean, strongly-typed code without falling back to std::any.
-
-## C++ Code Generator (Transpiler)
-
-Visitor.py walks the AST and emits valid C++ code.
-
-Supported code generation:
-
-* Function signatures based on inferred types
-* Automatic selection between double, int, bool, std::string
-* Generation of:
-* std::vector<T>
-* std::map<K,V>
-* std::tuple<...>
-* Literal translation ("hello", lists, dicts, tuples)
-* Intelligent casting for unknown types
-* static_cast<double> for safe numeric coercion
-* No std::any_cast except as a rare fallback
-
-## Known Issues & Limitations 
-
-### Type inference is incomplete and sometimes contradictory
-- Variables may unexpectedly collapse to ANY during analysis.
-- Type promotion rules conflict in different parts of the analyzer.
-- Numeric coercion sometimes overrides legitimate types.
-- Some expressions infer as string because of earlier nodes, even when they shouldn’t.
-- Function return type unification is imperfect (e.g., mixing int/double/string).
-
-### String typing is fragile
-- Marks identifiers as string incorrectly
-- Propagates string types through certain operations
-- Misinterprets calls like str(b) as string contexts
-
-### Complex expressions break inference
-
-These often degrade to ANY, forcing the C++ output into fallback casting.
-
-- Nested calls
-- Function recursion
-- Tuple unpacking
-- Dictionary updates
-- Mixed-type arithmetic
-
-## Requirements
+## 🛠️ Requirements
 
 * Python 3.8+
-
 * PLY (Python Lex-Yacc) → install via pip:
+    ```bash
+    pip install ply
+    ```
+* **C++ Compiler**: To compile the generated `.cpp` file (e.g., GCC, Clang).
 
+***
 
-          pip install ply
+## 🚀 Usage
 
+To execute the transpilation process, run the main `Visitor.py` file with your Python input file:
 
-* **Optional:**
+```bash
+python Visitor.py <input_file.py> -o <output_file.cpp>
+```
 
-Works on any OS (Windows, Linux, macOS)
+## Comparison
 
-Recommended editor: VSCode or PyCharm for syntax highlighting and debugging
-
-## Usage
-
-To execute the code, you should be placed in the folder containing all the repo files. 
-Then, you can execute: 
-
-    python Visitor.py <input file>
-
-or 
-
-    py Visitor.py <input file> 
-
-Where input file is the name of the python file you want to tokenize. You can use Prueba.txt or Prueba2.txt or any other file written using a python language. 
-
-
+| Iteraciones | Python | Pure C++ | C++ transpiled |
+| :---------: | :----: | :----------: | :------------: |
+|      1      | 34.37574 | 1.34719 | 100 |
+|      2      | 34.44429 | 1.32408 | 100 |
+|      3      | 35.39543 | 1.31808 | 100 |
+|      4      | 34.565603 | 1.3051 | 100 |
+|      5      | 34.150238 | 1.34496 | 100 |
+|      6      | 34.3899204 | 1.35729 | 100 |
+|      7      | 33.9984008 | 1.3466 | 100 |
+|      8      | 34.4992194 | 1.33068 | 100 |
+|      9      | 34.126796 | 1.32732 | 100 |
+|     10      | 34.502017 | 1.35939 | 100 |
+| **Average** | **34.44332618** | **1.336069** | **100** |
 
 ### Students
 * Queene Zavala Morales. A77201
