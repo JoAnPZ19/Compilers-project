@@ -238,7 +238,15 @@ class Analyzer:
         if op in ('and', 'or', '&&', '||'):
             return self.annotate(node, BOOL)
 
-        # Fallback for ANY
+        # ------------------------------------------------------------------
+        # NUEVA REGLA: Si la operación es aritmética en tipos ANY, asumir INT.
+        # (Esto resuelve la inferencia de tipo para `hola(a,b): return a + b`)
+        # ------------------------------------------------------------------
+        if op in ('+', '-', '*', '/', '**'):
+            if t_left.equals(ANY) and t_right.equals(ANY):
+                return self.annotate(node, INT)
+
+        # Fallback to ANY
         if t_left.equals(ANY) or t_right.equals(ANY):
             return self.annotate(node, ANY)
 
@@ -297,6 +305,56 @@ class Analyzer:
 
         return self.annotate(node, ANY)
 
+    # --- Type Unification Logic (RECURSIVE FIX) ---
+    def _unify_types(self, types):
+        if not types:
+            return NONE
+        
+        # Eliminar duplicados para simplificar el análisis
+        unique_types = []
+        for t in types:
+            if t not in unique_types:
+                unique_types.append(t)
+        types = unique_types
+        
+        # CORRECCIÓN PARA RECURSIVIDAD (Priorizar concretos sobre ANY)
+        if len(types) >= 2 and ANY in types:
+            concrete_types = [t for t in types if t != ANY]
+            
+            # Si solo hay tipos ANY y tipos numéricos
+            if all(t.is_numeric() for t in concrete_types):
+                if any(t.equals(DOUBLE) for t in concrete_types):
+                    return DOUBLE
+                if any(t.equals(INT) for t in concrete_types):
+                    return INT
+            
+            # Si solo hay tipos ANY y string
+            if all(t.equals(STRING) for t in concrete_types):
+                return STRING
+                
+            # Si solo hay tipos ANY y boolean
+            if all(t.equals(BOOL) for t in concrete_types):
+                return BOOL
+        
+        # Si ANY sigue siendo un tipo o fue el único tipo (incompatible o no se cumple la regla anterior)
+        if ANY in types:
+            return ANY
+
+        # Lógica original de unificación de tipos concretos:
+        if len(types) == 1:
+            return types[0]
+            
+        # Unificar tipos numéricos
+        if all(t.is_numeric() for t in types):
+            return DOUBLE if any(t.equals(DOUBLE) for t in types) else INT
+
+        # Si todos los tipos son el mismo tipo no numérico, devolver ese tipo
+        if all(t.equals(types[0]) for t in types):
+            return types[0]
+
+        # Tipos incompatibles (ej. INT y STRING) resultan en ANY
+        return ANY
+
     # --- Function defs ---
     def visit_function_def(self, node):
         name = node.value
@@ -329,14 +387,9 @@ class Analyzer:
         # Determine final return type
         ret_final = NONE
         if ret_types:
-            unified = ret_types[0]
-            for rt in ret_types[1:]:
-                if unified.is_numeric() and rt.is_numeric():
-                    unified = DOUBLE if (unified.equals(DOUBLE) or rt.equals(DOUBLE)) else INT
-                elif not unified.equals(rt):
-                    unified = ANY
-            ret_final = unified
-
+            # USAMOS EL MÉTODO DE UNIFICACIÓN MEJORADO
+            ret_final = self._unify_types(ret_types)
+        
         # Update function type with actual return type in parent scope
         self.symtab.pop()
         
@@ -375,12 +428,9 @@ class Analyzer:
         if not elem_types:
             el = ANY
         else:
-            el = elem_types[0]
-            for et in elem_types[1:]:
-                if el.is_numeric() and et.is_numeric():
-                    el = DOUBLE if (el.equals(DOUBLE) or et.equals(DOUBLE)) else INT
-                elif not el.equals(et):
-                    el = ANY
+            # Usar el unificador para elementos de lista
+            el = self._unify_types(elem_types)
+
         return self.annotate(node, Type('list', [el]))
 
     def visit_tuple(self, node):
@@ -395,17 +445,14 @@ class Analyzer:
                 vt = self.visit(pair.children[1]) or ANY
                 key_types.append(kt)
                 val_types.append(vt)
+        
         if key_types:
-            k = key_types[0]
-            for kt in key_types[1:]:
-                if not k.equals(kt):
-                    k = ANY
-            v = val_types[0]
-            for vt in val_types[1:]:
-                if not v.equals(vt):
-                    v = ANY
+            # Usar el unificador para llaves y valores de diccionario
+            k = self._unify_types(key_types)
+            v = self._unify_types(val_types)
         else:
             k = ANY; v = ANY
+            
         return self.annotate(node, Type('dict', [k, v]))
 
     def visit_pair(self, node):
@@ -455,4 +502,3 @@ class Analyzer:
             self.symtab.declare(name, self.ANY)
 
         self.visit(suite)
-

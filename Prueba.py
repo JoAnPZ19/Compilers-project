@@ -34,5 +34,5 @@ while a < b:
     c = b
     b = "hola"
     b=c-2
-print("Si printeo mis probabilidades de graduarme suben :)")
+print("Si printeo hasta aquí mis probabilidades de pasar el curso y graduarme suben :)")
 
