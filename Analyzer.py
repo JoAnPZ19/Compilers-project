@@ -1,10 +1,6 @@
-# /mnt/data/Analyzer.py
-# Analyzer: recorre AST e infiere tipos simples (int/double/string/bool/none/list/dict/any/func/tuple)
-
 from collections import deque
 import ast
 
-# --- Tipos simples ---
 class Type:
     def __init__(self, name, params=None):
         self.name = name
@@ -105,6 +101,7 @@ class Analyzer:
         self.function_returns = {}
         self.errors = []
         self._debug = False
+        self.ANY = ANY
 
     def analyze(self, node):
         self.visit(node)
@@ -447,17 +444,15 @@ class Analyzer:
         self.visit(node.children[1])
 
     def visit_for(self, node):
-        target = node.children[0]
-        iterable = node.children[1]
-        suite = node.children[2]
-        
-        it = self.visit(iterable)
-        
-        if target and is_node(target) and target.type == "identifier":
-            tname = target.value
-            if it and isinstance(it, Type) and it.name == 'list' and it.params:
-                self.symtab.declare(tname, it.params[0])
-            else:
-                self.symtab.declare(tname, ANY)
-        
+        target = node.children[0]     
+        iterable = node.children[1]   
+        suite = node.children[2]     
+
+        self.visit(iterable)
+
+        if target.type == "identifier":
+            name = target.value
+            self.symtab.declare(name, self.ANY)
+
         self.visit(suite)
+

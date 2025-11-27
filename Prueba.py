@@ -1,35 +1,14 @@
-### PRUEBAS
-def energy(mass, velocity):
-    # It calculates kinetic energy
-    print("Calculating energy...")
-    return mass * velocity ** 2
-
-mass = 70
-v = 4.5
-print("La energía calculada es: ", energy(mass, v))
-
-def random_operation(a, b):
-    print("Performing random operation with a and b...")
-    c = a + b
-    # Hi I'm a comment!
-    return c + a * b + 2.6571896
-
 def hola(a,b):
-    return "Hola" + str(a) + str(b)
+    return a + b
 
 print(hola(1,2))
 
-def Fibonacci(n):
-    if n <= 0:
-        return 0
+def fib(n):
     if n == 1 or n == 2:
         return 1
     else:
-        return Fibonacci(n-1) + Fibonacci(n-2)
-
-numeros = [0,1,2,3,4,5,6,7,8,9,10]
-for num in numeros:
-    print("Fibonacci de " + str(num) + " es " + str(Fibonacci(num)))
+        return fib(n-1) + fib(n-2)
+print (fib(5))
 
 a = 4
 print(a)
@@ -50,13 +29,10 @@ for e in a[3]:
     
 a=5
 b=10
-
 while a < b:
-    print(Fibonacci(b-5))
-    b = b - 1
+    print(fib(b-5))
+    c = b
+    b = "hola"
+    b=c-2
+print("Si printeo mis probabilidades de graduarme suben :)")
 
-queene = True
-jose = 789.298781
-andrey = "ECCI"
-
-print("Finalizado")

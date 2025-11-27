@@ -1,178 +1,140 @@
-#include <iostream>
-#include <string>
-#include <vector>
-#include <map>
-#include <tuple>
-#include <variant>
-#include <cmath>
-#include <any>
-using namespace std;
+# Project: C++ Transpiler for Fangless Python
 
-// Type alias for values that can be multiple types
-using Value = variant<int, double, string, 
-                       vector<any>, 
-                       map<string, any>, 
-                       tuple<int, int, int, int>>;
+## Description
+Fangless Python is a simplified Python-like language designed for experimentation with lexing, parsing, static analysis, AST processing, and code generation.
 
-// Helper function for str() conversion
-template<typename T>
-string str(T value) {
-    return to_string(value);
-}
+## What's included? 
 
-// Overload for string (already a string)
-string str(const string& value) {
-    return value;
-}
+-This project includes:
+-An indentation-sensitive lexer (Python-style INDENT/DEDENT)
+-A PLY (Python Lex-Yacc) parser
+-A clean AST node system
+-A static type inference analyzer
+-A C++ code generator, capable of transpiling Fangless Python to modern C++
 
-// Helper to print any type
-void print_any(const any& val) {
-    try {
-        cout << any_cast<int>(val);
-    } catch(...) {
-        try {
-            cout << any_cast<double>(val);
-        } catch(...) {
-            try {
-                cout << any_cast<string>(val);
-            } catch(...) {
-                try {
-                    auto vec = any_cast<vector<int>>(val);
-                    cout << "[";
-                    for (size_t i = 0; i < vec.size(); i++) {
-                        cout << vec[i];
-                        if (i < vec.size() - 1) cout << ", ";
-                    }
-                    cout << "]";
-                } catch(...) {
-                    try {
-                        auto tup = any_cast<tuple<int,int,int,int>>(val);
-                        cout << "(" << get<0>(tup) << ", " << get<1>(tup) 
-                             << ", " << get<2>(tup) << ", " << get<3>(tup) << ")";
-                    } catch(...) {
-                        try {
-                            auto m = any_cast<map<string, any>>(val);
-                            cout << "{";
-                            size_t count = 0;
-                            for (const auto& [k, v] : m) {
-                                cout << "'" << k << "': ";
-                                print_any(v);
-                                if (++count < m.size()) cout << ", ";
-                            }
-                            cout << "}";
-                        } catch(...) {
-                            cout << "[complex type]";
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+### Indentation-based Lexer
 
-// Energy function
-double energy(double mass, double velocity) {
-    // It calculates kinetic energy
-    cout << "Calculating energy..." << endl;
-    return mass * pow(velocity, 2);
-}
+The custom lexer converts physical indentation into INDENT and DEDENT tokens, closely matching Python’s own behavior.
+This allows block structures without braces and enables clear, Pythonic grammar rules in the parser.
 
-// Random operation function
-double random_operation(double a, double b) {
-    cout << "Performing random operation with a and b..." << endl;
-    double c = a + b;
-    // Hi I'm a comment!
-    return c + a * b + 2.6571896;
-}
 
-// Hola function
-string hola(int a, int b) {
-    return "Hola" + str(a) + str(b);
-}
+### Full Parser for Core Language Constructs
 
-// Fibonacci function
-int Fibonacci(int n) {
-    if (n <= 0) {
-        return 0;
-    }
-    if (n == 1 || n == 2) {
-        return 1;
-    }
-    else {
-        return Fibonacci(n - 1) + Fibonacci(n - 2);
-    }
-}
+The parser supports:
+-def ...: function definitions
+-Indented suites / blocks
+-Assignments
+-Arithmetic and boolean expressions
+-Conditionals (if / elif / else)
+-Loop constructs (for, while)
+-return statements
+-Lists, tuples, dictionaries
+-Subscripts and indexing
+-Function calls
+-Built-ins: print, len, range, etc.
+-Comments and blank lines are ignored.
 
-int main(int argc, char *argv[]) {
-    // Calculate energy
-    int mass = 70;
-    double v = 4.5;
-    cout << "La energía calculada es: " << energy(mass, v) << endl;
-    
-    // Test hola function
-    cout << hola(1, 2) << endl;
-    
-    // Fibonacci for list of numbers
-    vector<int> numeros = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    for (int num : numeros) {
-        cout << "Fibonacci de " << str(num) << " es " << str(Fibonacci(num)) << endl;
-    }
-    
-    // Variable reassignment with different types
-    int a_int = 4;
-    cout << a_int << endl;
-    
-    int b_int = 5;
-    string a_str = "hola";
-    string b_str = a_str + str(b_int);
-    cout << b_str << endl;
-    
-    // Mixed type vector
-    vector<any> a_mixed = {
-        1,
-        string("hola"),
-        map<string, any>{{"z", 1}, {"x", string("ECCI")}},
-        vector<int>{1, 2, 3, 4},
-        make_tuple(1, 2, 3, 4)
-    };
-    
-    // Print mixed vector
-    cout << "[";
-    for (size_t i = 0; i < a_mixed.size(); i++) {
-        print_any(a_mixed[i]);
-        if (i < a_mixed.size() - 1) cout << ", ";
-    }
-    cout << "]" << endl;
-    
-    cout << "Fibonacci" << endl;
-    
-    // Loop through mixed vector (except last element)
-    for (size_t i = 0; i < a_mixed.size() - 1; i++) {
-        print_any(a_mixed[i]);
-        cout << endl;
-    }
-    
-    // Loop through the 4th element (vector of ints)
-    auto vec_elem = any_cast<vector<int>>(a_mixed[3]);
-    for (int e : vec_elem) {
-        cout << e << endl;
-    }
-    
-    // While loop with Fibonacci
-    int a = 5;
-    int b = 10;
-    
-    while (a < b) {
-        cout << Fibonacci(b - 5) << endl;
-        b = b - 1;
-    }
-    
-    // Additional variable declarations
-    bool queene = true;
-    double jose = 789.298781;
-    string andrey = "ECCI";
-    
-    cout << "Finalizado" << endl;
-    
-    return 0;
-}
+AST Design
+
+A single lightweight Node class represents all parts of the program:
+-type — node type ("if", "assignment", "call", …)
+-value — identifier or literal
+-children — ordered subnodes
+
+This minimal design makes the AST easy to debug, print, transform, and transpile.
+
+## Static Type Analyzer (Type Inference)
+
+Analyzer.py implements a full static type inference pass over the AST.
+It infers:
+
+-int, double, string, bool, none
+-list[T], dict[K,V], tuple[...]
+-Function parameter and return types
+-The type of expressions and variables (Work in progress)
+-Types across control flow
+-A multi-scope symbol table with shadowing (Work in progress)
+-Type System Philosophy
+-This project follows a minimal-string rule: 
+-Only literal "..." strings count as type string 
+-Everything else defaults to numeric (double)
+-str(x) does not convert the function into a “string context”
+-If a function contains no string literals, the whole function becomes numerically typed
+
+This rule allows the C++ generator to produce clean, strongly-typed code without falling back to std::any.
+
+## C++ Code Generator (Transpiler)
+
+Visitor.py walks the AST and emits valid C++ code.
+
+Supported code generation:
+
+Function signatures based on inferred types
+Automatic selection between double, int, bool, std::string
+Generation of:
+std::vector<T>
+std::map<K,V>
+std::tuple<...>
+Literal translation ("hello", lists, dicts, tuples)
+Intelligent casting for unknown types
+static_cast<double> for safe numeric coercion
+No std::any_cast except as a rare fallback
+
+## Known Issues & Limitations 
+
+### Type inference is incomplete and sometimes contradictory
+-Variables may unexpectedly collapse to ANY during analysis.
+-Type promotion rules conflict in different parts of the analyzer.
+-Numeric coercion sometimes overrides legitimate types.
+-Some expressions infer as string because of earlier nodes, even when they shouldn’t.
+-Function return type unification is imperfect (e.g., mixing int/double/string).
+
+### String typing is fragile
+-Marks identifiers as string incorrectly
+-Propagates string types through certain operations
+-Misinterprets calls like str(b) as string contexts
+
+### Complex expressions break inference
+
+These often degrade to ANY, forcing the C++ output into fallback casting.
+
+-Nested calls
+-Function recursion
+-Tuple unpacking
+-Dictionary updates
+-Mixed-type arithmetic
+
+## Requirements
+
+* Python 3.8+
+
+* PLY (Python Lex-Yacc) → install via pip:
+
+
+          pip install ply
+
+
+* **Optional:**
+
+Works on any OS (Windows, Linux, macOS)
+
+Recommended editor: VSCode or PyCharm for syntax highlighting and debugging
+
+## Usage
+
+To execute the code, you should be placed in the folder containing all the repo files. 
+Then, you can execute: 
+
+    python Visitor.py <input file>
+
+or 
+
+    py Visitor.py <input file> 
+
+Where input file is the name of the python file you want to tokenize. You can use Prueba.txt or Prueba2.txt or any other file written using a python language. 
+
+
+
+### Students
+* Queene Zavala Morales. A77201
+* Jose Andrey Pereira. C05869

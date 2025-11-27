@@ -29,14 +29,18 @@ class Visitor:
 
 class CppVisitor(Visitor):
     def __init__(self, symtab=None):
-        self.function_lines = []  # Lines for function definitions
-        self.main_lines = []      # Lines for main function
+        self.function_lines = []  
+        self.main_lines = []     
         self.symtab = symtab
         self.indent_level = 0
         self.inside_function = False
         self.declared_main = set()
         self.func_declared_stack = []
-        self.current_output = None  # Will point to either function_lines or main_lines
+        self.current_output = None  
+        self.global_vars = set()
+        self.local_vars = {}
+        self.errors = []
+        self.current_function = None
 
     def emit(self, text=""):
         line = "    " * self.indent_level + text
@@ -95,28 +99,29 @@ class CppVisitor(Visitor):
         return getattr(node, "inferred_type", None)
 
     def visit_module(self, node):
+        self.func_declared_stack = [self.declared_main]
+        self.indent_level = 0
+
         for child in node.children:
-            if isinstance(child, str):
-                if child.strip() == "":
-                    continue
+            if isinstance(child, str) and child.strip() == "":
+                continue
 
             if is_node(child) and child.type == "function_def":
-                # Function definitions go to function_lines
                 self.current_output = self.function_lines
                 self.inside_function = True
                 self.visit(child)
                 self.inside_function = False
             else:
-                # Top-level statements go to main_lines
                 self.current_output = self.main_lines
                 self.inside_function = False
-                self.func_declared_stack = [self.declared_main]
                 self.indent_level = 1
                 self.visit(child)
                 self.indent_level = 0
-                self.func_declared_stack = []
 
+        # clear the stack when done
+        self.func_declared_stack = []
         return self.generate_full_output()
+
 
     def generate_full_output(self):
         includes = (
@@ -149,16 +154,30 @@ class CppVisitor(Visitor):
         return includes + str_helper + functions_cpp + "\n\n" + main_cpp
 
     def visit_function_def(self, node):
-        name = node.value
+
+        # --- FIX 1: robust function name detection ----
+        if hasattr(node, "value") and node.value:
+            name = node.value
+        elif node.children and hasattr(node.children[0], "value"):
+            name = node.children[0].value
+        else:
+            name = "unknown_function"
+
+        self.current_function = name
+        self.local_vars[name] = set()
+
+        # --- existing param extraction ----
         params_node = node.children[0] if len(node.children) > 0 else None
-        suite_node = node.children[1] if len(node.children) > 1 else None
+        suite_node  = node.children[1] if len(node.children) > 1 else None
 
         params = []
         if params_node and is_node(params_node):
             for p in params_node.children:
                 if is_node(p):
                     params.append(p.value)
+                    self.local_vars[name].add(p.value)   # track parameters
 
+        # --- existing C++ signature generation logic ----
         func_type = getattr(node, "inferred_type", None)
         ret_type_str = "std::any"
         cpp_params = []
@@ -173,8 +192,10 @@ class CppVisitor(Visitor):
         else:
             cpp_params = [f"std::any {p}" for p in params]
 
-        self.func_declared_stack.append(set())
+        # track declared vars
+        self.func_declared_stack.append(set(params))
 
+        # emit C++ function header
         self.emit(f"{ret_type_str} {name}({', '.join(cpp_params)}) {{")
         self.push()
 
@@ -185,6 +206,8 @@ class CppVisitor(Visitor):
         self.emit("}\n")
 
         self.func_declared_stack.pop()
+        self.current_function = None
+
 
     def visit_suite(self, node):
         for child in node.children:
@@ -250,22 +273,36 @@ class CppVisitor(Visitor):
         iterable = node.children[1]
         suite = node.children[2] if len(node.children) > 2 else None
 
-        target_name = self.visit(target)
         iterable_expr = self.visit(iterable)
-        
-        # Get the type of the loop variable
+
+        if is_node(target) and getattr(target, "type", None) == "identifier":
+            target_name = target.value
+        else:
+            target_name = self.visit(target)
+
+        if self.func_declared_stack:
+            self.func_declared_stack[-1].add(target_name)
+        else:
+            self.declared_main.add(target_name)
+
+        if self.current_function:
+            if self.current_function not in self.local_vars:
+                self.local_vars[self.current_function] = set()
+            self.local_vars[self.current_function].add(target_name)
+
         iter_type = self.get_expr_type(iterable)
-        if iter_type and iter_type.name == 'list' and iter_type.params:
+        if iter_type and getattr(iter_type, "name", None) == 'list' and iter_type.params:
             elem_type = self.cpp_type_name(iter_type.params[0])
             self.emit(f"for ({elem_type} {target_name} : {iterable_expr}) {{")
         else:
             self.emit(f"for (auto {target_name} : {iterable_expr}) {{")
-        
+
         self.push()
         if suite:
             self.visit(suite)
         self.pop()
         self.emit("}")
+
 
     def visit_assignment(self, node):
         name = node.value
@@ -279,15 +316,22 @@ class CppVisitor(Visitor):
 
         cpp_t = self.cpp_type_name(t)
 
-        # Check if variable is already declared in current scope
+        if self.current_function is None:
+            self.global_vars.add(name)
+        else:
+            if self.current_function not in self.local_vars:
+                self.local_vars[self.current_function] = set()
+            self.local_vars[self.current_function].add(name)
+
+        # Existing logic…
         cur_declared = self.func_declared_stack[-1] if self.func_declared_stack else self.declared_main
-        
         if name in cur_declared:
             self.emit(f"{name} = {expr};")
         else:
             decl_type = cpp_t if cpp_t != "std::any" else "auto"
             self.emit(f"{decl_type} {name} = {expr};")
             cur_declared.add(name)
+
 
     def visit_return(self, node):
         if node.children:
@@ -307,7 +351,6 @@ class CppVisitor(Visitor):
         if not expr_node:
             return ""
 
-        # Check if it's an assignment or other statement that handles itself
         if is_node(expr_node) and expr_node.type == "assignment":
             self.visit(expr_node)
             return ""
@@ -315,7 +358,6 @@ class CppVisitor(Visitor):
         expr_cpp = self.visit(expr_node)
         
         if expr_cpp and expr_cpp.strip():
-            # Don't double-emit for print statements
             if not (is_node(expr_node) and expr_node.type == "call" and expr_node.value == "print"):
                 self.emit(f"{expr_cpp};")
         
@@ -427,7 +469,43 @@ class CppVisitor(Visitor):
         return f"{obj}[{idx}]"
 
     def visit_identifier(self, node):
-        return node.value
+        varname = node.value
+
+        if self.func_declared_stack:
+            current_scope = self.func_declared_stack[-1]
+        else:
+            current_scope = self.declared_main  
+
+        t = None
+        if self.symtab:
+            t = self.symtab.lookup(varname)
+            if t and getattr(t, "name", None) == "func":
+                return varname  
+
+        if self.current_function:
+            if self.current_function in self.local_vars:
+                if varname in self.local_vars[self.current_function]:
+                    return varname
+
+        if varname in current_scope:
+            return varname
+
+        was_declared_somewhere = False
+        if self.symtab and t is not None and t.name != "any":
+            was_declared_somewhere = True
+
+        if not was_declared_somewhere:
+            msg = f'"{varname}" is not declared anywhere)'
+            print(msg)
+            self.errors.append(msg)
+            return varname
+
+        msg = f'"{varname}" used before declaration)'
+        print(msg)
+        self.errors.append(msg)
+
+        return varname
+
 
     def visit_number(self, node):
         return str(node.value)
