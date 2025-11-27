@@ -21,25 +21,25 @@ This allows block structures without braces and enables clear, Pythonic grammar 
 ### Full Parser for Core Language Constructs
 
 The parser supports:
--def ...: function definitions
--Indented suites / blocks
--Assignments
--Arithmetic and boolean expressions
--Conditionals (if / elif / else)
--Loop constructs (for, while)
--return statements
--Lists, tuples, dictionaries
--Subscripts and indexing
--Function calls
--Built-ins: print, len, range, etc.
--Comments and blank lines are ignored.
+- def ...: function definitions
+- Indented suites / blocks
+- Assignments
+- Arithmetic and boolean expressions
+- Conditionals (if / elif / else)
+- Loop constructs (for, while)
+- return statements
+- Lists, tuples, dictionaries
+- Subscripts and indexing
+- Function calls
+- Built-ins: print, len, range, etc.
+- Comments and blank lines are ignored.
 
 AST Design
 
 A single lightweight Node class represents all parts of the program:
--type — node type ("if", "assignment", "call", …)
--value — identifier or literal
--children — ordered subnodes
+- type — node type ("if", "assignment", "call", …)
+- value — identifier or literal
+- children — ordered subnodes
 
 This minimal design makes the AST easy to debug, print, transform, and transpile.
 
@@ -48,18 +48,18 @@ This minimal design makes the AST easy to debug, print, transform, and transpile
 Analyzer.py implements a full static type inference pass over the AST.
 It infers:
 
--int, double, string, bool, none
--list[T], dict[K,V], tuple[...]
--Function parameter and return types
--The type of expressions and variables (Work in progress)
--Types across control flow
--A multi-scope symbol table with shadowing (Work in progress)
--Type System Philosophy
--This project follows a minimal-string rule: 
--Only literal "..." strings count as type string 
--Everything else defaults to numeric (double)
--str(x) does not convert the function into a “string context”
--If a function contains no string literals, the whole function becomes numerically typed
+- int, double, string, bool, none
+- list[T], dict[K,V], tuple[...]
+- Function parameter and return types
+- The type of expressions and variables (Work in progress)
+- Types across control flow
+- A multi-scope symbol table with shadowing (Work in progress)
+- Type System Philosophy
+- This project follows a minimal-string rule: 
+- Only literal "..." strings count as type string 
+- Everything else defaults to numeric (double)
+- str(x) does not convert the function into a “string context”
+- If a function contains no string literals, the whole function becomes numerically typed
 
 This rule allows the C++ generator to produce clean, strongly-typed code without falling back to std::any.
 
@@ -69,40 +69,40 @@ Visitor.py walks the AST and emits valid C++ code.
 
 Supported code generation:
 
-Function signatures based on inferred types
-Automatic selection between double, int, bool, std::string
-Generation of:
-std::vector<T>
-std::map<K,V>
-std::tuple<...>
-Literal translation ("hello", lists, dicts, tuples)
-Intelligent casting for unknown types
-static_cast<double> for safe numeric coercion
-No std::any_cast except as a rare fallback
+* Function signatures based on inferred types
+* Automatic selection between double, int, bool, std::string
+* Generation of:
+* std::vector<T>
+* std::map<K,V>
+* std::tuple<...>
+* Literal translation ("hello", lists, dicts, tuples)
+* Intelligent casting for unknown types
+* static_cast<double> for safe numeric coercion
+* No std::any_cast except as a rare fallback
 
 ## Known Issues & Limitations 
 
 ### Type inference is incomplete and sometimes contradictory
--Variables may unexpectedly collapse to ANY during analysis.
--Type promotion rules conflict in different parts of the analyzer.
--Numeric coercion sometimes overrides legitimate types.
--Some expressions infer as string because of earlier nodes, even when they shouldn’t.
--Function return type unification is imperfect (e.g., mixing int/double/string).
+- Variables may unexpectedly collapse to ANY during analysis.
+- Type promotion rules conflict in different parts of the analyzer.
+- Numeric coercion sometimes overrides legitimate types.
+- Some expressions infer as string because of earlier nodes, even when they shouldn’t.
+- Function return type unification is imperfect (e.g., mixing int/double/string).
 
 ### String typing is fragile
--Marks identifiers as string incorrectly
--Propagates string types through certain operations
--Misinterprets calls like str(b) as string contexts
+- Marks identifiers as string incorrectly
+- Propagates string types through certain operations
+- Misinterprets calls like str(b) as string contexts
 
 ### Complex expressions break inference
 
 These often degrade to ANY, forcing the C++ output into fallback casting.
 
--Nested calls
--Function recursion
--Tuple unpacking
--Dictionary updates
--Mixed-type arithmetic
+- Nested calls
+- Function recursion
+- Tuple unpacking
+- Dictionary updates
+- Mixed-type arithmetic
 
 ## Requirements
 
