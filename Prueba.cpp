@@ -14,16 +14,16 @@ std::string str(T value) {
     return std::to_string(value);
 }
 
-std::any hola(std::any a, std::any b) {
-    return (a + b);
+int hola(std::any a, std::any b) {
+    return (std::any_cast<int>(a) + std::any_cast<int>(b));
 }
 
-std::any fib(std::any n) {
-    if (((n == 1) || (n == 2))) {
+int fib(std::any n) {
+    if (((std::any_cast<int>(n) == 1) || (std::any_cast<int>(n) == 2))) {
         return 1;
     }
     else {
-        return (fib((n - 1)) + fib((n - 2)));
+        return (std::any_cast<int>(fib((std::any_cast<int>(n) - 1))) + std::any_cast<int>(fib((std::any_cast<int>(n) - 2))));
     }
 }
 
@@ -40,7 +40,7 @@ int main(int argc, char *argv[]) {
     a = std::vector<std::any>{1, "hola", std::map<std::string, std::any>{{"z", 1}, {"x", "ECCI"}}, std::vector<int>{1, 2, 3, 4}, std::tuple<int, int, int, int>(1, 2, 3, 4)};
     std::cout << a << std::endl;
     std::cout << "Fibonacci" << std::endl;
-    for (int i : /* range(0, (a.size() - 1)) */) {
+    for (int i : /* range((a.size() - 1)) */) {
         std::cout << a[i] << std::endl;
     }
     for (auto e : a[3]) {
@@ -54,6 +54,6 @@ int main(int argc, char *argv[]) {
         b = "hola";
         b = (c - 2);
     }
-    std::cout << "Si printeo mis probabilidades de graduarme suben :)" << std::endl;
+    std::cout << "Si printeo hasta aquí mis probabilidades de pasar el curso y graduarme suben :)" << std::endl;
     return 0;
 }
