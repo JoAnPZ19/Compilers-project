@@ -274,13 +274,12 @@ class CppVisitor(Visitor):
         iterable = node.children[1]
         suite = node.children[2] if len(node.children) > 2 else None
 
-        iterable_expr = self.visit(iterable)
-
         if is_node(target) and getattr(target, "type", None) == "identifier":
             target_name = target.value
         else:
             target_name = self.visit(target)
 
+        # Track the variable as declared
         if self.func_declared_stack:
             self.func_declared_stack[-1].add(target_name)
         else:
@@ -291,13 +290,46 @@ class CppVisitor(Visitor):
                 self.local_vars[self.current_function] = set()
             self.local_vars[self.current_function].add(target_name)
 
-        iter_type = self.get_expr_type(iterable)
-        if iter_type and getattr(iter_type, "name", None) == 'list' and iter_type.params:
-            elem_type = self.cpp_type_name(iter_type.params[0])
-            self.emit(f"for ({elem_type} {target_name} : {iterable_expr}) {{")
+        # Check if iterable is a range() call
+        is_range_call = (is_node(iterable) and 
+                        iterable.type == "call" and 
+                        iterable.value == "range")
+
+        if is_range_call:
+            # Handle range() - generate standard C++ for loop
+            args = iterable.children or []
+            
+            if len(args) == 1:
+                # range(n) -> for(int i = 0; i < n; i++)
+                end_expr = self.visit(args[0])
+                self.emit(f"for (int {target_name} = 0; {target_name} < {end_expr}; {target_name}++) {{")
+            elif len(args) == 2:
+                # range(start, end) -> for(int i = start; i < end; i++)
+                start_expr = self.visit(args[0])
+                end_expr = self.visit(args[1])
+                self.emit(f"for (int {target_name} = {start_expr}; {target_name} < {end_expr}; {target_name}++) {{")
+            elif len(args) == 3:
+                # range(start, end, step)
+                start_expr = self.visit(args[0])
+                end_expr = self.visit(args[1])
+                step_expr = self.visit(args[2])
+                # Determine comparison operator based on step (positive vs negative)
+                # For simplicity, assume positive step and use <
+                self.emit(f"for (int {target_name} = {start_expr}; {target_name} < {end_expr}; {target_name} += {step_expr}) {{")
+            else:
+                # Fallback for invalid range
+                self.emit(f"for (int {target_name} = 0; {target_name} < 0; {target_name}++) {{")
         else:
-            # Fallback to auto if type is unknown or complex
-            self.emit(f"for (auto {target_name} : {iterable_expr}) {{")
+            # Handle regular iterables (lists, etc.) - range-based for loop
+            iterable_expr = self.visit(iterable)
+            iter_type = self.get_expr_type(iterable)
+            
+            if iter_type and getattr(iter_type, "name", None) == 'list' and iter_type.params:
+                elem_type = self.cpp_type_name(iter_type.params[0])
+                self.emit(f"for ({elem_type} {target_name} : {iterable_expr}) {{")
+            else:
+                # Fallback to auto if type is unknown or complex
+                self.emit(f"for (auto {target_name} : {iterable_expr}) {{")
 
         self.push()
         if suite:
