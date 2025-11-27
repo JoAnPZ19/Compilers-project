@@ -12,10 +12,7 @@ This project implements a complete toolchain to transpile Python-like source cod
 This project includes the following core components:
 
 * **`Lexer.py`**: An indentation-sensitive lexer (Python-style `INDENT`/`DEDENT`) that converts physical indentation into tokens, allowing for clear, Pythonic grammar rules.
-* **`Parser.py`**: A PLY (Python Lex-Yacc) parser that builds a clean **Abstract Syntax Tree (AST)** 
-
-[Image of Abstract Syntax Tree diagram]
- from the tokens.
+* **`Parser.py`**: A PLY (Python Lex-Yacc) parser that builds a clean **Abstract Syntax Tree (AST)** from the tokens.
 * **`Analyzer.py`**: A **static type inference analyzer** that traverses the AST to determine variable and expression types, supporting complex structures like lists, dictionaries, and functions.
 * **`Visitor.py`**: The C++ code generator (`CppVisitor`), capable of transpiling Fangless Python to modern C++ (`.cpp` files). It includes logic to handle dynamic Python features (like type reassignment) by issuing **transpilation warnings** and falling back to `std::any` where necessary.
 * **`benchmark.py`**: Python file containing the **Iterative Fibonacci** and **Bubble Sort** implementations, used to measure Python's native execution time.
