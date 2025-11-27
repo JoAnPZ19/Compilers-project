@@ -53,7 +53,7 @@ To execute the transpilation process, run the main `Visitor.py` file with your P
 python Visitor.py <input_file.py> -o <output_file.cpp>
 ```
 
-## (Not so far) Comparison of the 3 codes
+## (Not so fair) Comparison of the 3 codes
 
 The table shows the average execution times over 10 iterations (Iterations 1-10 and an 'Average' row) for three configurations:
 
